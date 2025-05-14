@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lea Wallet Browser Test (Full)</title>
+    <script src="./dist/lea-wallet.web.min.js"></script>
+    <style>
+        /* ... (keep your existing styles) ... */
+        body { font-family: sans-serif; padding: 1em; color: #333; background-color: #f9f9f9;}
+        p { margin-bottom: 0.5em; }
+        code, pre { background-color: #eee; padding: 0.2em 0.4em; border-radius: 3px; font-family: monospace;}
+        pre#results {
+            padding: 1em;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-top: 1em;
+            border: 1px solid #ccc;
+            min-height: 20em;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .status { font-weight: bold; }
+        .success { color: green; }
+        .error { color: red; }
+        .step { font-weight: bold; margin-top: 0.5em; display: block; } /* Use display:block for steps */
+    </style>
+</head>
+<body>
+    <h1>Lea Wallet Browser Test (Full Sequence)</h1>
+    <p>Status: <code id="status">Initializing...</code></p>
+    <h2>Results:</h2>
+    <pre id="results">Waiting for DOM content to load...</pre>
+
+    <script>
+        // --- Wait for DOM Ready ---
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- Get DOM Elements (NOW INSIDE the listener) ---
+            const statusElement = document.getElementById('status');
+            const resultsPre = document.getElementById('results');
+
+            // --- CRITICAL Check: Ensure elements were found ---
+            if (!statusElement || !resultsPre) {
+                console.error("FATAL: Could not find status or results elements in the DOM!");
+                alert("Error initializing test page: Could not find required elements. Check element IDs.");
+                // Try setting resultsPre text directly if possible, otherwise give up
+                if (resultsPre) resultsPre.textContent = "FATAL ERROR: Could not find #status or #results element!";
+                return; // Stop script execution
+            }
+
+            // --- Helper Functions (Can be defined inside or outside listener, here is fine) ---
+            function logResult(message) {
+                console.log(message);
+                // Use innerHTML to render spans/breaks correctly
+                // Check resultsPre again just in case, though redundant if initial check passed
+                if (resultsPre) {
+                    resultsPre.innerHTML += message.replace(/\n/g, '<br>') + '<br>';
+                    resultsPre.scrollTop = resultsPre.scrollHeight; // Auto-scroll
+                } else {
+                    console.error("logResult Error: resultsPre element not found!");
+                }
+            }
+
+            function logError(message, errorObj = null) {
+                const fullMessage = `❌ ERROR: ${message}`;
+                console.error(fullMessage, errorObj || '');
+                 if (resultsPre) {
+                    resultsPre.innerHTML += `<span class="error">${fullMessage}</span><br>`;
+                    if (errorObj && errorObj.stack) {
+                        // Use pre-wrap for stack trace readability
+                        resultsPre.innerHTML += `<span class="error" style="white-space: pre-wrap;">${errorObj.stack}</span><br>`;
+                    }
+                    resultsPre.scrollTop = resultsPre.scrollHeight; // Auto-scroll
+                 } else {
+                    console.error("logError Error: resultsPre element not found!");
+                 }
+            }
+
+            function localBytesToHex(bytes) { // Keep your hex converter
+                if (!bytes) return '';
+                return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+            }
+
+            function assert(condition, message) { // Keep your assert helper
+                if (!condition) {
+                    throw new Error(`Assertion Failed: ${message}`);
+                }
+                logResult(`<span class="success">✅ Assert OK:</span> ${message}`);
+            }
+
+            // --- Test Configuration ---
+            const TEST_MNEMONIC = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+            const ACCOUNT_INDEX = 0;
+            const INCORRECT_PUBLIC_KEY_ADDRESS = "lea1vr3s0unrm7cx26sephep35d84dtvcjvtcwy9ty9vthfgnyl2vwpsgf4txp";
+
+
+            // --- Test Logic (inside an async IIFE, also inside listener) ---
+            (async () => {
+                statusElement.textContent = 'Running...';
+                resultsPre.textContent = ''; // Clear "Waiting..." message
+
+                try {
+                    logResult("--- Browser Test Start (Full Sequence) ---");
+
+                    // Step 1: Check Library Load and Exports
+                    logResult("\n<span class='step'>Step 1: Checking Library Load...</span>");
+                    logResult("Checking for window.lea...");
+                     if (typeof window.lea === 'undefined') {
+                        throw new Error("window.lea global object not found. Check script path and build ('--global-name=lea'?).");
+                     }
+                    logResult("Found window.lea. Checking required exports...");
+                    const { Wallet, PublicKey, utf8ToBytes } = window.lea;
+                     if (!Wallet) throw new Error("window.lea.Wallet is missing.");
+                     if (!PublicKey) throw new Error("window.lea.PublicKey is missing.");
+                    const messageEncoder = utf8ToBytes || ((str) => new TextEncoder().encode(str)); // Handle potential missing utf8ToBytes
+                    const bytesToHex = window.lea.bytesToHex || localBytesToHex; // Handle potential missing bytesToHex
+                     logResult("Library components verified.");
+
+
+                    // Step 2: Setup Wallet and Keys
+                    logResult("\n<span class='step'>Step 2: Setup Wallet, Keys, Message...</span>");
+                    logResult(`Using Mnemonic: ${TEST_MNEMONIC}`);
+                    const wallet = Wallet.fromMnemonic(TEST_MNEMONIC);
+                     assert(wallet && typeof wallet.getAccount === 'function', 'Wallet created successfully and has getAccount method.');
+
+                    const keypair = wallet.getAccount(ACCOUNT_INDEX);
+                    assert(keypair && keypair.publicKey && typeof keypair.sign === 'function', `Keypair for account ${ACCOUNT_INDEX} derived successfully.`);
+
+                    const publicKey = keypair.publicKey;
+                     assert(publicKey && typeof publicKey.toBytes === 'function' && typeof publicKey.toString === 'function', 'PublicKey obtained with toBytes/toString methods.');
+
+                    const publicKeyBytes = publicKey.toBytes();
+                    const publicKeyHex = bytesToHex(publicKeyBytes);
+                    const address = publicKey.toString();
+                     assert(address && typeof address === 'string' && address.startsWith('lea1'), 'Address derived successfully and looks valid.');
+
+                    logResult(` -> Public Key (Hex): ${publicKeyHex}`);
+                    logResult(` -> Address (Bech32m): ${address}`);
+
+                    assert(address !== INCORRECT_PUBLIC_KEY_ADDRESS, 'Check: Incorrect address is different from derived address.');
+
+                    const message = "Test message for Lea Wallet Browser @ " + new Date().toISOString();
+                    const messageBytes = messageEncoder(message);
+                    logResult(`Message to Sign: ${message}`);
+                    logResult(`Message (Bytes): ${bytesToHex(messageBytes)}`);
+
+                    logResult("Signing message...");
+                    const signature = await keypair.sign(messageBytes);
+                    assert(signature instanceof Uint8Array && signature.length > 0, 'Signature generated successfully.');
+                    logResult(`Signature (Hex): ${bytesToHex(signature)}`);
+                    logResult(`Signature length: ${signature.length}`);
+
+
+                    // Step 3: Verification Tests
+                    logResult("\n<span class='step'>Step 3: Running Verification Tests...</span>");
+
+                     logResult("Verifying with original PublicKey instance...");
+                     let isValid = await publicKey.verify(messageBytes, signature);
+                     assert(isValid, 'Signature is valid with original PublicKey.');
+
+                     logResult("Reconstructing PublicKey from correct address string...");
+                    const correctLoadedPublicKey = new PublicKey(address);
+                     assert(correctLoadedPublicKey && typeof correctLoadedPublicKey.verify === 'function', 'PublicKey reconstructed successfully from correct address.');
+                     logResult("Verifying with reconstructed PublicKey instance...");
+                     isValid = await correctLoadedPublicKey.verify(messageBytes, signature);
+                     assert(isValid, 'Signature is valid with reconstructed PublicKey.');
+
+                     logResult("Loading incorrect PublicKey instance...");
+                    const incorrectPublicKey = new PublicKey(INCORRECT_PUBLIC_KEY_ADDRESS);
+                     assert(incorrectPublicKey && typeof incorrectPublicKey.verify === 'function', 'PublicKey loaded successfully from incorrect address.');
+                     logResult("Verifying with incorrect PublicKey instance (EXPECTING FAILURE)...");
+                     isValid = await incorrectPublicKey.verify(messageBytes, signature);
+                     assert(isValid === false, 'Signature is INVALID with incorrect PublicKey (as expected).');
+
+
+                    // Step 4: Test Completion
+                    logResult("\n<span class='step'>Step 4: Test Completion</span>");
+                    logResult("\n--- Browser Test End (Full Sequence) ---");
+                    statusElement.textContent = 'All Tests PASSED';
+                    statusElement.className = 'status success';
+
+                } catch (error) {
+                    logError(`Test Sequence FAILED: ${error.message}`, error);
+                    statusElement.textContent = `Tests FAILED! Check results/console.`;
+                    statusElement.className = 'status error';
+                }
+            })(); // End of async IIFE
+
+        }); // End of DOMContentLoaded listener
+    </script>
+</body>
+</html>
