@@ -36,3 +36,10 @@ await txn.sign(account0);
 
 const signedTransaction = await txn.toBytes();
 console.log(`signedTransaction (${signedTransaction.length})\n`, bytesToHex(signedTransaction));
+
+const sendTxResponse = await connection.sendTransaction([bytesToHex(signedTransaction)]);
+console.log('sendTxResponse', sendTxResponse);
+
+
+const theBalance = await connection.getBalance([account0.publicKey.toString()]);
+console.log('theBalance', theBalance);

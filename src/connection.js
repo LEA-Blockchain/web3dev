@@ -23,7 +23,7 @@ class ConnectionImpl {
         return clusterUrls[cluster];
     }
 
-    async _sendRequest(method) {
+    async _sendRequest(method, params) {
         const response = await fetch(this.url, {
             method: "POST",
             headers: {
@@ -32,7 +32,7 @@ class ConnectionImpl {
             body: JSON.stringify({
                 jsonrpc: "1.0",
                 method,
-                params: []
+                ...(params !== undefined && { params }) //params: []
             }),
         });
 
@@ -55,6 +55,14 @@ class ConnectionImpl {
 
     getLatestBlockhash() {
         return this._sendRequest("getLatestBlockhash");
+    }
+
+    sendTransaction(tx) {
+        return this._sendRequest("sendTransaction", tx);
+    }
+
+    getBalance(addrs) {
+        return this._sendRequest("getBalance", addrs);
     }
 }
 
