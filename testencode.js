@@ -43,3 +43,5 @@ console.log('sendTxResponse', sendTxResponse);
 
 const theBalance = await connection.getBalance([account0.publicKey.toString()]);
 console.log('theBalance', theBalance);
+
+

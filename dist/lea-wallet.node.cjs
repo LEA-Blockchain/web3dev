@@ -2084,7 +2084,7 @@ var ConnectionImpl = class {
     }
     return clusterUrls[cluster];
   }
-  async _sendRequest(method) {
+  async _sendRequest(method, params) {
     const response = await fetch(this.url, {
       method: "POST",
       headers: {
@@ -2093,7 +2093,8 @@ var ConnectionImpl = class {
       body: JSON.stringify({
         jsonrpc: "1.0",
         method,
-        params: []
+        ...params !== void 0 && { params }
+        //params: []
       })
     });
     if (!response.ok) {
@@ -2110,6 +2111,12 @@ var ConnectionImpl = class {
   }
   getLatestBlockhash() {
     return this._sendRequest("getLatestBlockhash");
+  }
+  sendTransaction(tx) {
+    return this._sendRequest("sendTransaction", tx);
+  }
+  getBalance(addrs) {
+    return this._sendRequest("getBalance", addrs);
   }
 };
 var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
