@@ -1,5 +1,5 @@
 //import { Connection, Wallet, Keypair, PublicKey, bytesToHex, SystemProgram, Transaction } from './dist/lea-wallet.node.mjs';
-import { Connection, Wallet, Keypair, PublicKey, bytesToHex, SystemProgram, Transaction } from './src/index.js';
+import { Connection, Wallet, Keypair, PublicKey, bytesToHex, SystemProgram, Transaction, decodeTransaction } from './src/index.js';
 
 const accountIndex = 0;
 const wallet = Wallet.fromMnemonic("legal winner thank year wave sausage worth useful legal winner thank yellow");
@@ -40,8 +40,24 @@ console.log(`signedTransaction (${signedTransaction.length})\n`, bytesToHex(sign
 const sendTxResponse = await connection.sendTransaction([bytesToHex(signedTransaction)]);
 console.log('sendTxResponse', sendTxResponse);
 
-
 const theBalance = await connection.getBalance([account0.publicKey.toString()]);
 console.log('theBalance', theBalance);
 
+try {
+    const decoded = await decodeTransaction(signedTransaction);
+    console.log("Decoded Transaction:", JSON.stringify(decoded, (key, value) => {
+        if (value instanceof Uint8Array) {
+            return Array.from(value).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        if (typeof value === 'bigint') {
+            return value.toString() + 'n';
+        }
+        if (value instanceof PublicKey) {
+            return value.toString();
+        }
+        return value;
+    }, 2));
+} catch (e) {
+    console.error("Failed to decode transaction:", e);
+}
 
