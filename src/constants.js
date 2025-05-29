@@ -27,3 +27,10 @@ export const ADDRESS_HRP = 'lea';
 // export const DEFAULT_RPC_ENDPOINT = 'http://localhost:8899';
 // export const NETWORK_ID = 'lea-mainnet';
 // export const WS_ENDPOINT = 'ws://localhost:8900';
+
+export const LEA_SYSTEM_PROGRAM = new Uint8Array([
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255
+]);

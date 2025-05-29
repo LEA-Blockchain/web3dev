@@ -1,12 +1,6 @@
 // --- system-program.js ---
 import { CteEncoder } from '@leachain/cte-core'; // Make sure this is installed
-
-const LEA_SYSTEM_PROGRAM = new Uint8Array([
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255
-]);
+import { LEA_SYSTEM_PROGRAM } from './constants.js';
 
 export class TransferInstruction {
     #programIndex = null;

@@ -5,16 +5,11 @@ import { CteDecoder, CteEncoder, CTE_TAG_PUBLIC_KEY_LIST, CTE_TAG_IXDATA_FIELD, 
 
 // Imports from your lea-wallet library (adjust paths if necessary)
 import { PublicKey } from './publickey.js';
-import { bytesToHex } from './index.js';
+import { bytesToHex } from './utils.js';
 
-// LEA_SYSTEM_PROGRAM_ID definition (from your system-program.js)
-const LEA_SYSTEM_PROGRAM_ID_BYTES = new Uint8Array([
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255
-]);
-const LEA_SYSTEM_PROGRAM_ID = new PublicKey(LEA_SYSTEM_PROGRAM_ID_BYTES);
+import { LEA_SYSTEM_PROGRAM } from './constants.js';
+
+const LEA_SYSTEM_PROGRAM_ID = new PublicKey(LEA_SYSTEM_PROGRAM);
 
 /**
  * Decodes the commandData of a SystemProgram transfer instruction.
