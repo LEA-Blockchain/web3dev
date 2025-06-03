@@ -1825,6 +1825,40 @@ function encode(hrp, dataBytes) {
 var LEA_COIN_TYPE = 2323;
 var DEFAULT_ACCOUNT_DERIVATION_BASE = `m/44'/${LEA_COIN_TYPE}'`;
 var ADDRESS_HRP = "lea";
+var LEA_SYSTEM_PROGRAM = new Uint8Array([
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255,
+  255
+]);
 
 // src/publickey.js
 var PublicKey = class {
@@ -2482,46 +2516,359 @@ var CteEncoder = class _CteEncoder {
   }
 };
 var decoder_mvp_default = __toBinary("AGFzbQEAAAABLQhgAX8Bf2ACf38Bf2ABfwF9YAR/f39/AGABfwF8YAF/AX5gAX8AYAN/f38BfwMiIQAAAAAAAQAAAAAAAAABAgMEAAAABQAFAAAFAAUAAAYHAAQFAXABAQEFAwEAAgYIAX8BQbCIBgsHqAceBm1lbW9yeQIAE2dldF9wdWJsaWNfa2V5X3NpemUAABdnZXRfc2lnbmF0dXJlX2l0ZW1fc2l6ZQABEGN0ZV9kZWNvZGVyX2luaXQAAgZtYWxsb2MAIBBjdGVfZGVjb2Rlcl9sb2FkAAMRY3RlX2RlY29kZXJfcmVzZXQAHhRjdGVfZGVjb2Rlcl9wZWVrX3RhZwAKJmN0ZV9kZWNvZGVyX3BlZWtfcHVibGljX2tleV9saXN0X2NvdW50AAYlY3RlX2RlY29kZXJfcGVla19wdWJsaWNfa2V5X2xpc3RfdHlwZQAHJWN0ZV9kZWNvZGVyX3JlYWRfcHVibGljX2tleV9saXN0X2RhdGEAHCVjdGVfZGVjb2Rlcl9wZWVrX3NpZ25hdHVyZV9saXN0X2NvdW50AAgkY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF90eXBlAAkkY3RlX2RlY29kZXJfcmVhZF9zaWduYXR1cmVfbGlzdF9kYXRhAB0nY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW5kZXhfcmVmZXJlbmNlABEfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWxlYjEyOAAbH2N0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX3NsZWIxMjgAFhxjdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQ4ABUdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW50MTYAEh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQzMgATHWN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX2ludDY0ABQdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWludDgAGh5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MTYAFx5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MzIAGB5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50NjQAGR9jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9mbG9hdDMyAA4fY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfZmxvYXQ2NAAQH2N0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX2Jvb2xlYW4ADCRjdGVfZGVjb2Rlcl9wZWVrX2NvbW1hbmRfZGF0YV9sZW5ndGgABCVjdGVfZGVjb2Rlcl9yZWFkX2NvbW1hbmRfZGF0YV9wYXlsb2FkAAsK3RQhIwACQCAAQQRJDQAAAAsgAEEYdEEYdUECdEGAiICAAGooAgALIwACQCAAQQRJDQAAAAsgAEEYdEEYdUECdEGQiICAAGooAgALnwEBBH8CQCAARQ0AIABB0QlPDQBBAEEAKAKgiICAACIBQbCIgIAAaiABQQxqIgJBgIACSyIDGyEEIAEgAiADGyIDIABqIQECQAJAIAJBgYACSQ0AIAFBgIACSw0BC0EAIAMgASABQYCAAksbNgKgiICAAAsgBEEANgIIIAQgADYCBCAEQQAgA0GwiICAAGogAUGAgAJLGzYCACAEDwsAAAsHACAAKAIACzoBAX8jgICAgABBEGsiASSAgICAAAJAIAANAAAACyAAIAFBDGoQhYCAgAAhACABQRBqJICAgIAAIAALogEBBH8CQCAAKAIIIgJBAWoiAyAAKAIEIgRNDQAgAUEANgIAQX8PCwJAIAAoAgAiBSACai0AACIAQcABcUHAAUcNAAJAIABBIHENACABQQE2AgAgAEEfcQ8LIABBA3ENAAJAIAJBAmogBE0NACABQQA2AgBBfw8LIAFBAjYCACAAQQZ0QYAOcSAFIANqLQAAciIAQdJ2akHxdk0NACAADwsAAAtMAQJ/AkAgAEUNAEH/ASEBAkAgACgCCCICQQFqIAAoAgRLDQAgACgCACACai0AACIAQcAATw0BIABBA00NASAAQQJ2IQELIAEPCwAAC0UBAn8CQCAARQ0AQf8BIQECQCAAKAIIIgJBAWogACgCBEsNACAAKAIAIAJqLQAAIgBBwABPDQEgAEEDcSEBCyABDwsAAAtPAQJ/AkAgAEUNAEH/ASEBAkAgACgCCCICQQFqIAAoAgRLDQAgACgCACACai0AACIAQcABcUHAAEcNASAAQQJ2QQ9xIgFFDQELIAEPCwAAC0kBAn8CQCAARQ0AQf8BIQECQCAAKAIIIgJBAWogACgCBEsNACAAKAIAIAJqLQAAIgBBwAFxQcAARw0BIABBA3EhAQsgAQ8LAAALVgECfwJAAkAgACgCCCIBDQAgACgCAC0AAEHxAUcNAUEBIQEgAEEBNgIIC0F/IQICQCABQQFqIAAoAgRLDQAgACgCACABai0AAEHAAXEhAgsgAg8LAAALcwEDfyOAgICAAEEQayIBJICAgIAAAkAgAEUNACAAIAFBDGoQhYCAgAAiAkF/Rg0AIAEoAgwiA0UNACAAKAIIIANqIgMgAmoiAiAAKAIESw0AIAAgAjYCCCAAKAIAIQAgAUEQaiSAgICAACAAIANqDwsAAAspAAJAIABFDQAgAEEDEI2AgIAAQQJ2QQ9xIgBBAk8NACAAQQBHDwsAAAtIAQJ/AkAgACgCCCICQQFqIgMgACgCBEsNACAAKAIAIAJqLQAAIgJBwAFxQYABRw0AIAJBA3EgAUcNACAAIAM2AgggAg8LAAALPAIBfwF9I4CAgIAAQRBrIgEkgICAgAAgAEEIQQQgAUEMahCPgICAACABKgIMIQIgAUEQaiSAgICAACACC1kAAkAgAEUNACADRQ0AIABBAhCNgICAAEECdkEPcSABRw0AIAAoAggiASACaiAAKAIESw0AIAMgACgCACABaiACEJ+AgIAAGiAAIAAoAgggAmo2AggPCwAACzwCAX8BfCOAgICAAEEQayIBJICAgIAAIABBCUEIIAFBCGoQj4CAgAAgASsDCCECIAFBEGokgICAgAAgAgsbAAJAIAANAAAACyAAQQAQjYCAgABBAnZBD3ELOgEBfyOAgICAAEEQayIBJICAgIAAIABBAUECIAFBDmoQj4CAgAAgAS4BDiEAIAFBEGokgICAgAAgAAs6AQF/I4CAgIAAQRBrIgEkgICAgAAgAEECQQQgAUEMahCPgICAACABKAIMIQAgAUEQaiSAgICAACAACzwCAX8BfiOAgICAAEEQayIBJICAgIAAIABBA0EIIAFBCGoQj4CAgAAgASkDCCECIAFBEGokgICAgAAgAgs6AQF/I4CAgIAAQRBrIgEkgICAgAAgAEEAQQEgAUEPahCPgICAACABLAAPIQAgAUEQaiSAgICAACAAC7cBBgJ/AX4BfwF+AX8BfgJAAkAgAEUNACAAQQEQjYCAgABBPHFBCEcNACAAKAIIIQEgACgCBCECQgAhA0EAIQRCeSEFA0AgAUEBaiIGIAJLDQEgACAGNgIIIAAoAgAgAWotAAAiAUH/AHGtIAVCB3wiB4YgA4QhAyABQYABcUUNAiAEQQdqIQQgByEFIAYhASAHQjlUDQALCwAACyADQgBCfyAFQg58hkIAIAFBwABxGyAEQThLG4QLOgEBfyOAgICAAEEQayIBJICAgIAAIABBBUECIAFBDmoQj4CAgAAgAS8BDiEAIAFBEGokgICAgAAgAAs6AQF/I4CAgIAAQRBrIgEkgICAgAAgAEEGQQQgAUEMahCPgICAACABKAIMIQAgAUEQaiSAgICAACAACzwCAX8BfiOAgICAAEEQayIBJICAgIAAIABBB0EIIAFBCGoQj4CAgAAgASkDCCECIAFBEGokgICAgAAgAgs6AQF/I4CAgIAAQRBrIgEkgICAgAAgAEEEQQEgAUEPahCPgICAACABLQAPIQAgAUEQaiSAgICAACAAC6gBAwN/An4BfwJAAkAgAEUNACAAQQEQjYCAgABBPHFBBEcNACAAKAIIIQEgACgCBCECQQAhA0IAIQRCACEFA0AgASADakEBaiIGIAJLDQEgACAGNgIIIAAoAgAgAWogA2otAAAhBgJAIARCP1INACAGQQJPDQILIAZB/wBxrSAEhiAFhCEFIAZBgAFxRQ0CIARCB3whBCADQQFqIgNBCkcNAAsLAAALIAULbwEEfwJAIABFDQAgACgCCCIBQQFqIgIgACgCBCIDSw0AIAAoAgAiBCABai0AACIBQcAATw0AIAFBA00NACACIAFBA3FBAnRBgIiAgABqKAIAIAFBAnZsaiIBIANLDQAgACABNgIIIAQgAmoPCwAAC3YBBX8CQCAARQ0AIAAoAggiAUEBaiICIAAoAgQiA0sNACAAKAIAIgQgAWotAAAiAUHAAXFBwABHDQAgAUECdkEPcSIFRQ0AIAIgAUEDcUECdEGQiICAAGooAgAgBWxqIgEgA0sNACAAIAE2AgggBCACag8LAAALEgACQCAADQAAAAsgAEEBNgIIC7sBAQR/AkAgAkUNACACQQNxIQNBACEEAkAgAkF/akEDSQ0AIAJBfHEhBUEAIQQDQCAAIARqIgIgASAEaiIGLQAAOgAAIAJBAWogBkEBai0AADoAACACQQJqIAZBAmotAAA6AAAgAkEDaiAGQQNqLQAAOgAAIAUgBEEEaiIERw0ACwsgA0UNACABIARqIQIgACAEaiEEA0AgBCACLQAAOgAAIAJBAWohAiAEQQFqIQQgA0F/aiIDDQALCyAACzoBAn9BACEBAkBBACgCoIiAgAAiAiAAaiIAQYCAAksNAEEAIAA2AqCIgIAAIAJBsIiAgABqIQELIAELCycBAEGACAsgIAAAACAAAAAwAAAAQAAAAEAAAAAgAAAAIAAAACAAAAAA+AcEbmFtZQHQByEAE2dldF9wdWJsaWNfa2V5X3NpemUBF2dldF9zaWduYXR1cmVfaXRlbV9zaXplAhBjdGVfZGVjb2Rlcl9pbml0AxBjdGVfZGVjb2Rlcl9sb2FkBCRjdGVfZGVjb2Rlcl9wZWVrX2NvbW1hbmRfZGF0YV9sZW5ndGgFGl9wYXJzZV9jb21tYW5kX2RhdGFfaGVhZGVyBiZjdGVfZGVjb2Rlcl9wZWVrX3B1YmxpY19rZXlfbGlzdF9jb3VudAclY3RlX2RlY29kZXJfcGVla19wdWJsaWNfa2V5X2xpc3RfdHlwZQglY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF9jb3VudAkkY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF90eXBlChRjdGVfZGVjb2Rlcl9wZWVrX3RhZwslY3RlX2RlY29kZXJfcmVhZF9jb21tYW5kX2RhdGFfcGF5bG9hZAwfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfYm9vbGVhbg0WX2NvbnN1bWVfaXhkYXRhX2hlYWRlcg4fY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfZmxvYXQzMg8QX3JlYWRfZml4ZWRfZGF0YRAfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfZmxvYXQ2NBEnY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW5kZXhfcmVmZXJlbmNlEh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQxNhMdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW50MzIUHWN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX2ludDY0FRxjdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQ4Fh9jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9zbGViMTI4Fx5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MTYYHmN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX3VpbnQzMhkeY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWludDY0Gh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50OBsfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWxlYjEyOBwlY3RlX2RlY29kZXJfcmVhZF9wdWJsaWNfa2V5X2xpc3RfZGF0YR0kY3RlX2RlY29kZXJfcmVhZF9zaWduYXR1cmVfbGlzdF9kYXRhHhFjdGVfZGVjb2Rlcl9yZXNldB8GbWVtY3B5IAZtYWxsb2MHEgEAD19fc3RhY2tfcG9pbnRlcgkKAQAHLnJvZGF0YQAtCXByb2R1Y2VycwEMcHJvY2Vzc2VkLWJ5AQxEZWJpYW4gY2xhbmcGMTQuMC42");
+var CteDecoder = class _CteDecoder {
+  #wasmInstance = null;
+  #wasmMemory = null;
+  #wasmExports = null;
+  #decoderHandle = 0;
+  // Pointer to C struct cte_decoder_t*
+  #isDestroyed = false;
+  /**
+   * @private
+   * @description Internal constructor. Use static `CteDecoder.create()` method instead.
+   * @param {WebAssembly.Instance} wasmInstance - The instantiated decoder WASM module for this object.
+   * @param {DataView} wasmMemory - A DataView for this instance's WASM memory.
+   * @param {number} decoderHandle - The pointer (handle) to the C decoder context (`cte_decoder_t*`).
+   */
+  constructor(wasmInstance, wasmMemory, decoderHandle) {
+    this.#wasmInstance = wasmInstance;
+    this.#wasmMemory = wasmMemory;
+    this.#wasmExports = wasmInstance.exports;
+    this.#decoderHandle = decoderHandle;
+  }
+  /**
+   * @static
+   * @async
+   * @description Asynchronously creates and initializes a new, independent CTE decoder instance with the provided data buffer.
+   * Loads and instantiates a fresh copy of the decoder WASM module and copies the input buffer into its memory.
+   * @param {Uint8Array} cteBuffer - The buffer containing the CTE encoded data. Size must not exceed `CTE.CTE_MAX_TRANSACTION_SIZE`.
+   * @returns {Promise<CteDecoder>} A promise that resolves to the initialized CteDecoder instance.
+   * @throws {Error} If input is invalid, WASM binary/instantiation fails, exports are missing, buffer size is exceeded, or C-level decoder initialization fails.
+   * @example
+   * import { CteDecoder } from '@leachain/ctejs-core'; // Use package name
+   *
+   * async function main(encodedBytes) {
+   * try {
+   * const decoder = await CteDecoder.create(encodedBytes);
+   * console.log('Decoder ready!');
+   * // Proceed with decoding...
+   * } catch (err) {
+   * console.error("Failed to create decoder:", err);
+   * }
+   * }
+   */
+  static async create(cteBuffer) {
+    if (!(cteBuffer instanceof Uint8Array)) {
+      throw new Error("Input must be Uint8Array.");
+    }
+    if (cteBuffer.length === 0) {
+      console.warn("Input buffer empty. WASM might abort.");
+    }
+    if (cteBuffer.length > CTE_MAX_TRANSACTION_SIZE) {
+      throw new Error(`Input buffer size ${cteBuffer.length} exceeds max ${CTE_MAX_TRANSACTION_SIZE}`);
+    }
+    const importObject = {
+      env: {
+        abort: () => {
+          throw new Error(`WASM Decoder aborted`);
+        }
+      }
+    };
+    const requiredExports = [
+      "memory",
+      "get_public_key_size",
+      "get_signature_item_size",
+      //
+      "cte_decoder_init",
+      "cte_decoder_load",
+      "cte_decoder_reset",
+      "cte_decoder_peek_tag",
+      //
+      "cte_decoder_peek_public_key_list_count",
+      "cte_decoder_peek_public_key_list_type",
+      //
+      "cte_decoder_read_public_key_list_data",
+      "cte_decoder_peek_signature_list_count",
+      //
+      "cte_decoder_peek_signature_list_type",
+      "cte_decoder_read_signature_list_data",
+      //
+      "cte_decoder_read_ixdata_index_reference",
+      "cte_decoder_read_ixdata_uleb128",
+      //
+      "cte_decoder_read_ixdata_sleb128",
+      "cte_decoder_read_ixdata_int8",
+      //
+      "cte_decoder_read_ixdata_uint8",
+      "cte_decoder_read_ixdata_int16",
+      //
+      "cte_decoder_read_ixdata_uint16",
+      "cte_decoder_read_ixdata_int32",
+      //
+      "cte_decoder_read_ixdata_uint32",
+      "cte_decoder_read_ixdata_int64",
+      //
+      "cte_decoder_read_ixdata_uint64",
+      "cte_decoder_read_ixdata_float32",
+      //
+      "cte_decoder_read_ixdata_float64",
+      "cte_decoder_read_ixdata_boolean",
+      //
+      "cte_decoder_peek_command_data_length",
+      "cte_decoder_read_command_data_payload"
+      //
+    ];
+    const { instance } = await WebAssembly.instantiate(decoder_mvp_default, importObject);
+    const memory = new DataView(instance.exports.memory.buffer);
+    for (const exportName of requiredExports) {
+      if (!(exportName in instance.exports)) {
+        throw new Error(`WASM Decoder module instance is missing required export: ${exportName}`);
+      }
+    }
+    const bufferLen = cteBuffer.length;
+    const handle = instance.exports.cte_decoder_init(bufferLen);
+    if (!handle) {
+      throw new Error("Failed to create decoder handle in WASM");
+    }
+    const loadPtr = instance.exports.cte_decoder_load(handle);
+    if (!loadPtr) {
+      throw new Error("Failed to get load pointer from WASM decoder");
+    }
+    const currentMemoryForInstance = new DataView(instance.exports.memory.buffer);
+    if (loadPtr + bufferLen > currentMemoryForInstance.buffer.byteLength) {
+      throw new Error(`WASM memory overflow loading data into decoder instance`);
+    }
+    new Uint8Array(currentMemoryForInstance.buffer).set(cteBuffer, loadPtr);
+    return new _CteDecoder(instance, memory, handle);
+  }
+  /** @private */
+  #checkDestroyed() {
+    if (this.#isDestroyed || !this.#decoderHandle) {
+      throw new Error("Decoder instance destroyed or handle invalid.");
+    }
+  }
+  /** @private */
+  #refreshMemoryView() {
+    if (this.#wasmMemory.buffer !== this.#wasmInstance.exports.memory.buffer) {
+      this.#wasmMemory = new DataView(this.#wasmInstance.exports.memory.buffer);
+    }
+  }
+  /**
+   * @description Resets the decoder's read position to the beginning of the loaded buffer for this instance.
+   * @throws {Error} If the decoder instance has been destroyed.
+   */
+  reset() {
+    this.#checkDestroyed();
+    this.#wasmExports.cte_decoder_reset(this.#decoderHandle);
+    this.#refreshMemoryView();
+  }
+  //
+  /**
+   * @description Peeks at the tag (first byte, masked) of the next field in this instance's buffer.
+   * @returns {number | null} The tag value (e.g., `CTE.CTE_TAG_PUBLIC_KEY_LIST`) or `null` if at EOF/error.
+   * @throws {Error} If the decoder instance has been destroyed.
+   */
+  peekTag() {
+    this.#checkDestroyed();
+    const t = this.#wasmExports.cte_decoder_peek_tag(this.#decoderHandle);
+    return t < 0 ? null : t;
+  }
+  //
+  /**
+   * @description Peeks at the header of a Public Key List field in this instance's buffer.
+   * @returns {{count: number, typeCode: number} | null} Key count and type code, or `null`.
+   * @throws {Error} If the decoder instance has been destroyed.
+   */
+  peekPublicKeyListInfo() {
+    this.#checkDestroyed();
+    if (this.peekTag() !== CTE_TAG_PUBLIC_KEY_LIST) return null;
+    const c = this.#wasmExports.cte_decoder_peek_public_key_list_count(this.#decoderHandle);
+    const t = this.#wasmExports.cte_decoder_peek_public_key_list_type(this.#decoderHandle);
+    return c === CTE_PEEK_EOF || t === CTE_PEEK_EOF ? null : { count: c, typeCode: t };
+  }
+  //
+  /**
+   * @description Reads and consumes a Public Key List field from this instance's buffer.
+   * @returns {Uint8Array | null} A copy of the key data, or `null`.
+   * @throws {Error} If read fails, instance destroyed, or memory access fails.
+   */
+  readPublicKeyListData() {
+    this.#checkDestroyed();
+    const i = this.peekPublicKeyListInfo();
+    if (!i) return null;
+    const sz = this.#wasmExports.get_public_key_size(i.typeCode);
+    if (sz <= 0) throw new Error(`Invalid PK size ${sz}`);
+    const totSz = i.count * sz;
+    const ptr = this.#wasmExports.cte_decoder_read_public_key_list_data(this.#decoderHandle);
+    if (!ptr) throw new Error("Read PK fail");
+    this.#refreshMemoryView();
+    if (ptr + totSz > this.#wasmMemory.buffer.byteLength) throw new Error(`PK read overflow`);
+    return new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + totSz));
+  }
+  /**
+   * @description Peeks at the header of a Signature List field in this instance's buffer.
+   * @returns {{count: number, typeCode: number} | null} Item count and type code, or `null`.
+   * @throws {Error} If the decoder instance has been destroyed.
+   */
+  peekSignatureListInfo() {
+    this.#checkDestroyed();
+    if (this.peekTag() !== CTE_TAG_SIGNATURE_LIST) return null;
+    const c = this.#wasmExports.cte_decoder_peek_signature_list_count(this.#decoderHandle);
+    const t = this.#wasmExports.cte_decoder_peek_signature_list_type(this.#decoderHandle);
+    return c === CTE_PEEK_EOF || t === CTE_PEEK_EOF ? null : { count: c, typeCode: t };
+  }
+  //
+  /**
+   * @description Reads and consumes a Signature List field from this instance's buffer.
+   * @returns {Uint8Array | null} A copy of the signature/hash data, or `null`.
+   * @throws {Error} If read fails, instance destroyed, or memory access fails.
+   */
+  readSignatureListData() {
+    this.#checkDestroyed();
+    const i = this.peekSignatureListInfo();
+    if (!i) return null;
+    const sz = this.#wasmExports.get_signature_item_size(i.typeCode);
+    if (sz <= 0) throw new Error(`Invalid Sig size ${sz}`);
+    const totSz = i.count * sz;
+    const ptr = this.#wasmExports.cte_decoder_read_signature_list_data(this.#decoderHandle);
+    if (!ptr) throw new Error("Read Sig fail");
+    this.#refreshMemoryView();
+    if (ptr + totSz > this.#wasmMemory.buffer.byteLength) throw new Error(`Sig read overflow`);
+    return new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + totSz));
+  }
+  /** @private */
+  #readSimpleIxData(fn) {
+    this.#checkDestroyed();
+    if (this.peekTag() !== CTE_TAG_IXDATA_FIELD) throw new Error("Expected IxData");
+    return this.#wasmExports[fn](this.#decoderHandle);
+  }
+  //
+  /** Reads IxData: Legacy Index Reference (0-15). @returns {number} */
+  readIxDataIndexReference() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_index_reference");
+  }
+  //
+  /** Reads IxData: ULEB128 encoded value. @returns {bigint} */
+  readIxDataUleb128() {
+    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_uleb128"));
+  }
+  //
+  /** Reads IxData: SLEB128 encoded value. @returns {bigint} */
+  readIxDataSleb128() {
+    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_sleb128"));
+  }
+  //
+  /** Reads IxData: Fixed int8. @returns {number} */
+  readIxDataInt8() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_int8");
+  }
+  //
+  /** Reads IxData: Fixed uint8. @returns {number} */
+  readIxDataUint8() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint8");
+  }
+  //
+  /** Reads IxData: Fixed int16. @returns {number} */
+  readIxDataInt16() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_int16");
+  }
+  //
+  /** Reads IxData: Fixed uint16. @returns {number} */
+  readIxDataUint16() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint16");
+  }
+  //
+  /** Reads IxData: Fixed int32. @returns {number} */
+  readIxDataInt32() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_int32");
+  }
+  //
+  /** Reads IxData: Fixed uint32. @returns {number} */
+  readIxDataUint32() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint32");
+  }
+  //
+  /** Reads IxData: Fixed int64. @returns {bigint} */
+  readIxDataInt64() {
+    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_int64"));
+  }
+  //
+  /** Reads IxData: Fixed uint64. @returns {bigint} */
+  readIxDataUint64() {
+    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_uint64"));
+  }
+  //
+  /** Reads IxData: Fixed float32. @returns {number} */
+  readIxDataFloat32() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_float32");
+  }
+  //
+  /** Reads IxData: Fixed float64. @returns {number} */
+  readIxDataFloat64() {
+    return this.#readSimpleIxData("cte_decoder_read_ixdata_float64");
+  }
+  //
+  /** Reads IxData: Boolean constant. @returns {boolean} */
+  readIxDataBoolean() {
+    return !!this.#readSimpleIxData("cte_decoder_read_ixdata_boolean");
+  }
+  //
+  /**
+   * @description Peeks at the header of Command Data in this instance's buffer.
+   * @returns {number | null} The payload length, or `null`.
+   * @throws {Error} If the decoder instance has been destroyed.
+   */
+  peekCommandDataLength() {
+    this.#checkDestroyed();
+    if (this.peekTag() !== CTE_TAG_COMMAND_DATA) return null;
+    const l = this.#wasmExports.cte_decoder_peek_command_data_length(this.#decoderHandle);
+    return l < 0 || l > CTE_COMMAND_EXTENDED_MAX_LEN ? null : l;
+  }
+  //
+  /**
+   * @description Reads and consumes a Command Data field payload from this instance's buffer.
+   * @returns {{data: Uint8Array} | null} An object containing the payload bytes as `data`, or `null`.
+   * @throws {Error} If read fails, instance destroyed, or memory access fails.
+   */
+  readCommandDataPayload() {
+    this.#checkDestroyed();
+    const len = this.peekCommandDataLength();
+    if (len === null || len < 0) return null;
+    const ptr = this.#wasmExports.cte_decoder_read_command_data_payload(this.#decoderHandle);
+    if (!ptr && len > 0) throw new Error("Read Cmd payload failed");
+    let data = new Uint8Array(0);
+    if (len > 0) {
+      this.#refreshMemoryView();
+      if (ptr + len > this.#wasmMemory.buffer.byteLength) throw new Error(`Cmd read overflow`);
+      data = new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + len));
+    }
+    return { data };
+  }
+  /**
+   * @description Cleans up Javascript references associated with this decoder instance.
+   * Does not explicitly free WASM memory. Future calls to this instance will fail.
+   */
+  destroy() {
+    this.#decoderHandle = 0;
+    this.#wasmExports = null;
+    this.#wasmInstance = null;
+    this.#wasmMemory = null;
+    this.#isDestroyed = true;
+  }
+};
+var CTE_MAX_TRANSACTION_SIZE = 1232;
+var CTE_TAG_PUBLIC_KEY_LIST = 0;
+var CTE_TAG_SIGNATURE_LIST = 64;
+var CTE_TAG_IXDATA_FIELD = 128;
+var CTE_TAG_COMMAND_DATA = 192;
 var CTE_CRYPTO_TYPE_ED25519 = 0;
 var CTE_LIST_MAX_LEN = 15;
+var CTE_PUBKEY_SIZE_ED25519 = 32;
 var CTE_LEGACY_INDEX_MAX_VALUE = 15;
 var CTE_COMMAND_EXTENDED_MAX_LEN = 1197;
+var CTE_PEEK_EOF = 255;
 
 // src/system-program.js
-var LEA_SYSTEM_PROGRAM = new Uint8Array([
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255,
-  255
-]);
 var TransferInstruction = class {
   #programIndex = null;
   constructor({ fromPubkey, toPubkey, amount }) {
@@ -2764,6 +3111,199 @@ var Transaction = class {
     return encoder.getEncodedData();
   }
 };
+
+// src/transactionDecoder.js
+var LEA_SYSTEM_PROGRAM_ID = new PublicKey(LEA_SYSTEM_PROGRAM);
+async function decodeSystemProgramTransferInstruction(commandData, keyList) {
+  const instructionDecoder = await CteDecoder.create(commandData);
+  let decodedInstructionData;
+  try {
+    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+      throw new Error("SystemProgram Transfer: Expected action code (IxData).");
+    }
+    const actionCode = instructionDecoder.readIxDataUint8();
+    if (actionCode !== 0) {
+      throw new Error(`SystemProgram Transfer: Unexpected action code ${actionCode}. Expected 0.`);
+    }
+    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+      throw new Error("SystemProgram Transfer: Expected fromPubkey index (IxData).");
+    }
+    const fromIndex = instructionDecoder.readIxDataIndexReference();
+    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+      throw new Error("SystemProgram Transfer: Expected amount (IxData ULEB128).");
+    }
+    const amount = instructionDecoder.readIxDataUleb128();
+    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+      throw new Error("SystemProgram Transfer: Expected toPubkey index (IxData).");
+    }
+    const toIndex = instructionDecoder.readIxDataIndexReference();
+    if (fromIndex >= keyList.length || toIndex >= keyList.length) {
+      throw new Error(`SystemProgram Transfer: Invalid key index. FromIndex: ${fromIndex}, ToIndex: ${toIndex}, KeyList length: ${keyList.length}`);
+    }
+    if (instructionDecoder.peekTag() !== null) {
+      console.warn("SystemProgram Transfer: Trailing data found in instruction commandData.");
+    }
+    decodedInstructionData = {
+      fromPubkey: keyList[fromIndex],
+      // PublicKey object
+      toPubkey: keyList[toIndex],
+      // PublicKey object
+      amount
+    };
+  } finally {
+    instructionDecoder.destroy();
+  }
+  return decodedInstructionData;
+}
+async function decodeTransaction(encodedBytes) {
+  if (!(encodedBytes instanceof Uint8Array)) {
+    throw new TypeError("encodedBytes must be a Uint8Array.");
+  }
+  const decoder = await CteDecoder.create(encodedBytes);
+  const decodedTx = {
+    recentBlockhash: null,
+    // This will be a hex string
+    keyList: [],
+    rawKeyListBytes: [],
+    instructions: [],
+    signatures: [],
+    rawUnsignedDataForVerification: null
+  };
+  let unsignedDataEncoder;
+  try {
+    if (decoder.peekTag() !== CTE_TAG_PUBLIC_KEY_LIST) {
+      throw new Error("Transaction does not start with a Public Key List.");
+    }
+    const pkListInfo = decoder.peekPublicKeyListInfo();
+    if (!pkListInfo) {
+      throw new Error("Failed to peek Public Key List info.");
+    }
+    if (pkListInfo.typeCode !== CTE_CRYPTO_TYPE_ED25519) {
+      throw new Error(`Expected Ed25519 public key list (type ${CTE_CRYPTO_TYPE_ED25519}), got ${pkListInfo.typeCode}.`);
+    }
+    const publicKeyData = decoder.readPublicKeyListData();
+    if (!publicKeyData) {
+      throw new Error("Failed to read Public Key List data.");
+    }
+    for (let i = 0; i < publicKeyData.length; i += CTE_PUBKEY_SIZE_ED25519) {
+      decodedTx.rawKeyListBytes.push(publicKeyData.slice(i, i + CTE_PUBKEY_SIZE_ED25519));
+    }
+    decodedTx.keyList = decodedTx.rawKeyListBytes.map((pkBytes) => new PublicKey(pkBytes));
+    if (decodedTx.rawKeyListBytes.length > 0 && decodedTx.rawKeyListBytes[0]) {
+      decodedTx.recentBlockhash = bytesToHex(decodedTx.rawKeyListBytes[0]);
+    } else {
+      throw new Error("Public key list is empty or first element is invalid, cannot determine recentBlockhash.");
+    }
+    unsignedDataEncoder = await CteEncoder.create(encodedBytes.length + 512);
+    unsignedDataEncoder.addPublicKeyList(decodedTx.rawKeyListBytes, CTE_CRYPTO_TYPE_ED25519);
+    if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+      throw new Error("Expected instruction count (IxData) after public key list.");
+    }
+    const numInstructions = decoder.readIxDataIndexReference();
+    unsignedDataEncoder.addIxDataIndexReference(numInstructions);
+    for (let i = 0; i < numInstructions; i++) {
+      if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+        throw new Error(`Expected program index (IxData) for instruction ${i}.`);
+      }
+      const programIndexInKeyList = decoder.readIxDataIndexReference();
+      unsignedDataEncoder.addIxDataIndexReference(programIndexInKeyList);
+      if (programIndexInKeyList >= decodedTx.keyList.length || programIndexInKeyList < 0) {
+        throw new Error(`Invalid programIndexInKeyList ${programIndexInKeyList} for instruction ${i}. KeyList length: ${decodedTx.keyList.length}`);
+      }
+      const programIdBytes = decodedTx.rawKeyListBytes[programIndexInKeyList];
+      if (!programIdBytes) {
+        throw new Error(`Program ID bytes not found at index ${programIndexInKeyList} for instruction ${i}.`);
+      }
+      if (decoder.peekTag() !== CTE_TAG_COMMAND_DATA) {
+        throw new Error(`Expected command data for instruction ${i}.`);
+      }
+      const commandDataPayloadObj = decoder.readCommandDataPayload();
+      if (!commandDataPayloadObj) {
+        throw new Error(`Failed to read command data payload for instruction ${i}.`);
+      }
+      const commandData = commandDataPayloadObj.data;
+      unsignedDataEncoder.addCommandData(commandData);
+      const currentProgramIdObject = decodedTx.keyList[programIndexInKeyList];
+      const instruction = {
+        programId: bytesToHex(programIdBytes),
+        programIndexInKeyList,
+        rawData: commandData,
+        type: "unknown"
+      };
+      if (currentProgramIdObject && currentProgramIdObject.equals(LEA_SYSTEM_PROGRAM_ID)) {
+        try {
+          const parsedDetails = await decodeSystemProgramTransferInstruction(commandData, decodedTx.keyList);
+          instruction.type = "transfer";
+          instruction.fromPubkey = parsedDetails.fromPubkey;
+          instruction.toPubkey = parsedDetails.toPubkey;
+          instruction.amount = parsedDetails.amount;
+        } catch (e) {
+          instruction.type = "system_program_parse_error";
+          instruction.parseError = e.message;
+        }
+      }
+      decodedTx.instructions.push(instruction);
+    }
+    decodedTx.rawUnsignedDataForVerification = unsignedDataEncoder.getEncodedData();
+    while (decoder.peekTag() === CTE_TAG_SIGNATURE_LIST) {
+      const sigListInfo = decoder.peekSignatureListInfo();
+      if (!sigListInfo) {
+        throw new Error("Failed to peek Signature List info.");
+      }
+      if (sigListInfo.typeCode !== CTE_CRYPTO_TYPE_ED25519 || sigListInfo.count !== 1) {
+        throw new Error(`Invalid signature block format. Expected single Ed25519 signature (type ${CTE_CRYPTO_TYPE_ED25519}, count 1), got type ${sigListInfo.typeCode}, count ${sigListInfo.count}.`);
+      }
+      const signatureBytes = decoder.readSignatureListData();
+      if (!signatureBytes) {
+        throw new Error("Failed to read Signature List data.");
+      }
+      if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
+        throw new Error("Expected signer public key index (IxData) after signature.");
+      }
+      const signerPubkeyIndex = decoder.readIxDataIndexReference();
+      if (signerPubkeyIndex >= decodedTx.keyList.length || signerPubkeyIndex < 0) {
+        throw new Error(`Invalid signer public key index ${signerPubkeyIndex}, keyList has ${decodedTx.keyList.length} keys.`);
+      }
+      const signerPublicKey = decodedTx.keyList[signerPubkeyIndex];
+      if (!signerPublicKey) {
+        throw new Error(`Signer public key not found at index ${signerPubkeyIndex}.`);
+      }
+      let isValid = false;
+      try {
+        isValid = await signerPublicKey.verify(decodedTx.rawUnsignedDataForVerification, signatureBytes);
+      } catch (e) {
+        console.error(`Error during signature verification for PK index ${signerPubkeyIndex} (${signerPublicKey.toString()}):`, e);
+        isValid = false;
+      }
+      decodedTx.signatures.push({
+        signature: signatureBytes,
+        signerPublicKey,
+        signerPubkeyIndex,
+        isValid
+      });
+    }
+    if (decoder.peekTag() !== null) {
+      console.warn("Warning: Trailing data found in transaction after expected fields. Tag:", decoder.peekTag());
+    }
+    return decodedTx;
+  } catch (error) {
+    console.error("Error during transaction decoding:", error);
+    if (decoder && typeof decoder.destroy === "function") {
+      decoder.destroy();
+    }
+    if (unsignedDataEncoder && typeof unsignedDataEncoder.destroy === "function") {
+      unsignedDataEncoder.destroy();
+    }
+    throw error;
+  } finally {
+    if (decoder && typeof decoder.destroy === "function") {
+      decoder.destroy();
+    }
+    if (unsignedDataEncoder && typeof unsignedDataEncoder.destroy === "function") {
+      unsignedDataEncoder.destroy();
+    }
+  }
+}
 export {
   ADDRESS_HRP,
   Connection,
@@ -2771,12 +3311,14 @@ export {
   KeyList,
   Keypair,
   LEA_COIN_TYPE,
+  LEA_SYSTEM_PROGRAM,
   PublicKey,
   SystemProgram,
   Transaction,
   Wallet,
   areUint8ArraysEqual,
   bytesToHex,
+  decodeTransaction,
   generateMnemonic,
   hexToBytes,
   randomBytes,
