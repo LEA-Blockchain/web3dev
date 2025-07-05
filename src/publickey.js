@@ -1,9 +1,10 @@
 import { verify } from '@noble/ed25519'; // Import the verify function
 import { encode as bech32mEncode, decode as bech32mDecode } from './bech32m.js';
-import { ADDRESS_HRP } from './constants.js';
+import { ADDRESS_HRP, CTE_CRYPTO_TYPE_ED25519 } from './constants.js';
 
 export class PublicKey {
     #bytes;
+    keyType = CTE_CRYPTO_TYPE_ED25519;
 
     constructor(value) {
         if (typeof value === 'string') {
@@ -42,7 +43,7 @@ export class PublicKey {
     toBytes() {
         return Uint8Array.from(this.#bytes);
     }
-
+/*
     toString() {
         try {
             return bech32mEncode(ADDRESS_HRP, this.#bytes);
@@ -51,7 +52,7 @@ export class PublicKey {
             throw new Error("Failed to encode public key as Bech32m.");
         }
     }
-
+*/
     equals(other) {
         if (!other || typeof other.toBytes !== 'function') {
             return false;

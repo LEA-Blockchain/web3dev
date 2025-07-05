@@ -40,11 +40,14 @@ export class SLHPublicKey {
    * Returns a Bech32m-encoded address derived from a SHA-256 hash of the public key.
    * This avoids exposing large post-quantum keys directly in address format.
    */
-  toString() {
-    const hash = sha256(this.#bytes);
-    return bech32mEncode(ADDRESS_HRP, hash);
-  }
-
+  /*
+    toString() {
+      //const hash = sha256(this.#bytes);
+      //const fullLengthPublicKey = bech32mEncode(ADDRESS_HRP, this.#bytes);
+      //console.log(`SLH public key: ${fullLengthPublicKey}`);
+      return bech32mEncode(ADDRESS_HRP, this.#bytes);
+    }
+  */
   // Compares this key with another by byte equality
   equals(other) {
     if (!other || typeof other.toBytes !== 'function') return false;

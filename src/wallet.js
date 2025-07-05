@@ -1,113 +1,111 @@
 import { HDKey } from './hd.js';
-import { mnemonicToSeed } from './bip39.js'
+import { mnemonicToSeed } from './bip39.js';
 import { Keypair } from './keypair.js';
-import { DEFAULT_ACCOUNT_DERIVATION_BASE } from './constants.js';
+import { SLHKeypair } from './slh-keypair.js';
+import { ED25519_DERIVATION_BASE, SLHDSA_DERIVATION_BASE, ADDRESS_BYTE_LENGTH, ADDRESS_HRP } from './constants.js';
+import { createBLAKE3 } from "hash-wasm";
+import { Address } from './address.js';
 
-
-/**
- * Implements the Wallet interface for managing HD keys using @scure/bip39.
- * @implements {WalletDef}
- */
-class WalletImpl {
-    /**
-     * The master HDKey derived from the seed.
-     * @type {HDKey}
-     */
+export class WalletImpl {
     #masterKey;
 
-    /**
-     * Creates an instance of WalletImpl. Use Wallet.fromMnemonic.
-     * @param {HDKey} masterKey - The master HDKey object.
-     * @hideconstructor
-     */
     constructor(masterKey) {
         if (!(masterKey instanceof HDKey)) {
-            throw new Error("Invalid masterKey provided to WalletImpl constructor.");
+            throw new Error("Invalid masterKey provided.");
         }
         this.#masterKey = masterKey;
     }
 
-    /**
-     * Derives a Keypair using a BIP-44 derivation path string.
-     * @param {string} path - The derivation path (e.g., "m/44'/2323'/0'/0'").
-     * @returns {KeypairDef} The derived Keypair.
-     * @throws {Error} if the path is invalid or derivation fails.
-     */
-    deriveAccount(path) {
+    /** Derives an Ed25519 Keypair using a BIP-44 path. */
+    deriveAccountEdDsa(index) {
         try {
-            const derivedHDKey = this.#masterKey.derive(path);
-            // Assumes Keypair.fromSecretKey handles public key derivation
+            const derivedHDKey = this.#masterKey.derive(`${ED25519_DERIVATION_BASE}/${index}'`);
             return Keypair.fromSecretKey(derivedHDKey.privateKey);
         } catch (error) {
-            console.error(`Error deriving account for path ${path}:`, error);
-            throw new Error(`Failed to derive account for path ${path}.`);
+            throw new Error(`Failed to derive EdDSA account for path ${index}: ${error.message}`);
         }
     }
 
     /**
-     * Derives a Keypair using a simple account index based on SLIP-0010 pattern.
-     * Uses the path `m/44'/COIN_TYPE'/{index}'`. Index MUST be hardened.
-     * @param {number} index - The account index (e.g., 0, 1, 2...).
-     * @returns {KeypairDef} The derived Keypair.
-     * @throws {Error} if the index is invalid or derivation fails.
+     * Derives a post-quantum (SLH-DSA) Keypair.
+     * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
      */
-    getAccount(index) {
+    async getAccountSlhDsa(index) {
         if (typeof index !== 'number' || index < 0 || !Number.isInteger(index)) {
             throw new Error("Account index must be a non-negative integer.");
         }
-        const path = `${DEFAULT_ACCOUNT_DERIVATION_BASE}/${index}'`;
-        return this.deriveAccount(path);
+
+        // SLIP-0010 derivation for SLH-DSA uses a distinct purpose code (211').
+        const path = `${SLHDSA_DERIVATION_BASE}/${index}'`;
+        try {
+            const derivedHDKey = this.#masterKey.derive(path);
+            const pqcSeed = derivedHDKey.privateKey;
+            return await SLHKeypair.fromSecretKey(pqcSeed);
+        } catch (error) {
+            throw new Error(`Failed to derive SLH-DSA account for path ${path}: ${error.message}`);
+        }
     }
 
     /**
-     * Exports the raw private key for a derived account at a specific index.
-     * Uses the path `m/44'/COIN_TYPE'/{index}'`. Index MUST be hardened.
-     * Use with extreme caution.
-     * @param {number} index - The account index.
-     * @returns {Uint8Array} The raw private key (secret key) as a byte array.
-     * @throws {Error} if the index is invalid or derivation fails.
+     * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
+    * and derives a unified address from both public keys.
+    * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+    */
+    async getAccount(index) {
+        if (typeof index !== 'number' || index < 0 || !Number.isInteger(index)) {
+            throw new Error("Account index must be a non-negative integer.");
+        }
+
+        const edDsa = this.deriveAccountEdDsa(index);
+        const slhDsa = await this.getAccountSlhDsa(index);
+
+        const edPublicKeyBytes = edDsa.publicKey.toBytes();
+        const slhPublicKeyBytes = slhDsa.publicKey.toBytes();
+
+        // The address is the BLAKE3 hash of the concatenated EdDSA and SLH-DSA public keys.
+        const blake3Hasher = await createBLAKE3(ADDRESS_BYTE_LENGTH * 8);
+        blake3Hasher.update(edPublicKeyBytes);
+        blake3Hasher.update(slhPublicKeyBytes);
+        const publicKeyPairHash = blake3Hasher.digest('binary');
+        const address = new Address(publicKeyPairHash);
+
+        return {
+            edDsa,
+            slhDsa,
+            publicKeyPairHash,
+            address
+        };
+    }
+
+    /**
+     * Exports the raw Ed25519 private key for an account. Use with caution.
+     * @param {number} index - The hardened account index.
      */
     exportPrivateKey(index) {
         if (typeof index !== 'number' || index < 0 || !Number.isInteger(index)) {
             throw new Error("Account index must be a non-negative integer.");
         }
-        const path = `${DEFAULT_ACCOUNT_DERIVATION_BASE}/${index}'`;
+
+        const path = `${ED25519_DERIVATION_BASE}/${index}'`;
         try {
             const derivedHDKey = this.#masterKey.derive(path);
-            // Return a copy of the private key (seed part)
             return Uint8Array.from(derivedHDKey.privateKey);
         } catch (error) {
-            console.error(`Error exporting private key for index ${index}:`, error);
-            throw new Error(`Failed to export private key for index ${index}.`);
+            throw new Error(`Failed to export private key for index ${index}: ${error.message}`);
         }
     }
 }
 
-/**
- * Static methods for creating Wallet instances using @scure/bip39.
- * Matches the WalletConstructor interface shape.
- * @type {WalletConstructorDef}
- */
-const Wallet = {
+/** Factory for creating Wallet instances. */
+export const Wallet = {
     /**
-     * Creates a Wallet instance from a BIP-39 mnemonic phrase using @scure/bip39.
-     * Uses synchronous seed generation.
+     * Creates a wallet from a BIP-39 mnemonic phrase.
      * @param {string} mnemonic - The seed phrase.
-     * @param {string} [passphrase] - (Optional) BIP-39 passphrase.
-     * @returns {WalletDef} A new Wallet instance.
-     * @throws {Error} if the mnemonic is invalid according to the English wordlist.
+     * @param {string} [passphrase] - Optional BIP-39 passphrase.
      */
     fromMnemonic: (mnemonic, passphrase) => {
-        // Validate using @scure/bip39 and the explicitly imported English wordlist
         const seed = mnemonicToSeed(mnemonic, passphrase);
-
-        // Create the master HD key from the seed
         const masterKey = HDKey.fromMasterSeed(seed);
-
-        // Return the Wallet implementation instance
         return new WalletImpl(masterKey);
     },
 };
-
-// Export the Wallet object containing the static methods using named export
-export { Wallet };

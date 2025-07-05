@@ -1,7 +1,8 @@
 // Imports: Assuming these paths are correct for your project structure.
 // import { Connection, Wallet, Keypair, PublicKey, bytesToHex, SystemProgram, Transaction, decodeTransaction } from './dist/lea-wallet.node.mjs';
-import { Connection, Wallet, Keypair, PublicKey, bytesToHex, SystemProgram, Transaction, decodeTransaction } from './src/index.js';
-
+import { Connection, Wallet, Keypair, SLHKeypair, PublicKey, bytesToHex, SystemProgram, Transaction, decodeTransaction } from './src/index.js';
+import { Address } from './src/address.js'; // Assuming Address is exported from index.js
+import { utf8ToBytes } from './src/utils.js'; // Assuming utf8ToBytes is exported from utils.js
 // --- Configuration ---
 const SENDER_ACCOUNT_INDEX = 0;
 const MNEMONIC = "legal winner thank year wave sausage worth useful legal winner thank yellow";
@@ -31,7 +32,7 @@ async function fetchAndLogTransactionHistory(connection, accountPublicKeyString)
 
         do {
             console.log(`Fetching Page ${currentPage} (limit: ${limit}, before: ${nextCursor || 'N/A'})`);
-            
+
             const requestOptions = {
                 accountKey: accountPublicKeyString,
                 limit: limit,
@@ -39,7 +40,7 @@ async function fetchAndLogTransactionHistory(connection, accountPublicKeyString)
             if (nextCursor) { // Only add 'before' if nextCursor is truthy (not null/undefined)
                 requestOptions.before = nextCursor;
             }
-            
+
             const pageData = await connection.getTransactionsForAccount(requestOptions);
 
             if (pageData.transactions && pageData.transactions.length > 0) {
@@ -72,16 +73,26 @@ async function fetchAndLogTransactionHistory(connection, accountPublicKeyString)
         // 1. Setup Wallet and Sender Account
         console.log("--- Wallet Setup ---");
         const wallet = Wallet.fromMnemonic(MNEMONIC);
-        const senderAccount = wallet.getAccount(SENDER_ACCOUNT_INDEX);
-        const senderPublicKeyString = senderAccount.publicKey.toString();
-        console.log(`Sender Account (${SENDER_ACCOUNT_INDEX}): ${senderPublicKeyString}`);
+        const senderAccount = await wallet.getAccount(SENDER_ACCOUNT_INDEX);
+        console.log('senderAccount', senderAccount);
+        //const senderPublicKeyStringEdDsa = senderAccount.edDsa.publicKey.toString();
+        //const senderPublicKeyStringSlhDsa = senderAccount.slhDsa.publicKey.toString();
+        //console.log(`Sender Account edDsa (${SENDER_ACCOUNT_INDEX}): ${senderPublicKeyStringEdDsa}`);
+        //console.log(`Sender Account slhDsa (${SENDER_ACCOUNT_INDEX}): ${senderPublicKeyStringSlhDsa}`);
+        console.log(`LEA Address: ${senderAccount.address}`);
+        //process.exit();
+        // Generate an SLH-DSA keypair using the new wallet method
+        //const slhAccountIndex = 0;
+        //const slhKeypair = await wallet.getAccountPqc(slhAccountIndex);
+        //const slhPublicKeyString = slhKeypair.publicKey.toString();
+        //console.log(`SLH-DSA Account (${slhAccountIndex}): ${slhPublicKeyString}`);
 
         // 2. Establish RPC Connection
         const connection = Connection(RPC_CLUSTER_URL);
         console.log(`\n--- Connected to RPC: ${connection.url} ---`);
 
         // 3. Get Initial Balances (Optional, for context)
-        await logBalances(connection, senderPublicKeyString, TARGET_PUBLIC_KEY_STRING);
+        await logBalances(connection, senderAccount.address.toString(), TARGET_PUBLIC_KEY_STRING);
 
         // 4. Create and Send Transaction
         console.log("\n--- Creating and Sending Transaction ---");
@@ -90,18 +101,26 @@ async function fetchAndLogTransactionHistory(connection, accountPublicKeyString)
 
         const transaction = new Transaction();
         transaction.add(SystemProgram.transfer({
-            fromPubkey: senderAccount.publicKey,
-            toPubkey: new PublicKey(TARGET_PUBLIC_KEY_STRING),
+            fromPubkeyPairHash: senderAccount.address,
+            toPubkeyPairHash: new Address(TARGET_PUBLIC_KEY_STRING),
             amount: TRANSFER_AMOUNT,
         }));
         transaction.recentBlockhash = blockhash;
 
-        // Sign the transaction
-        await transaction.sign(senderAccount); // sign expects Keypair-like object
+        // Sign the transaction with both keypairs
+        await transaction.sign(senderAccount);
+        //await transaction.sign(senderAccount);
 
-        const signedTransactionBytes = await transaction.toBytes(); // Assuming toBytes() gives the signed tx
+        const signedTransactionBytes = await transaction.toBytes();
         const signedTransactionHex = bytesToHex(signedTransactionBytes);
-        console.log(`Signed Transaction (${signedTransactionBytes.length} bytes): ${signedTransactionHex.substring(0, 100)}...`);
+        console.log(`Signed Transaction (${signedTransactionBytes.length} bytes): ${signedTransactionHex}`);
+
+        /* auth token test */
+        console.log("\n--- Signing Message for Auth Token Test ---");
+        const timestamp = (new Date().getTime()).toString();
+        const messageSignAccount = await wallet.getAccount(99);
+        const messageSignature = await messageSignAccount.edDsa.sign(utf8ToBytes(timestamp));
+        console.log("Message Signature:", bytesToHex(messageSignature));
 
         // Send the transaction (sendTransaction expects a hex string)
         const sendTxResponse = await connection.sendTransaction(signedTransactionHex);
@@ -114,16 +133,15 @@ async function fetchAndLogTransactionHistory(connection, accountPublicKeyString)
         await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
 
         const fetchedTransaction = await connection.getTransaction(transactionId);
-        console.log('Fetched Transaction by ID (Hex):', fetchedTransaction.substring(0,100) + "...");
+        console.log('Fetched Transaction by ID (Hex):', fetchedTransaction.substring(0, 100) + "...");
         if (fetchedTransaction !== signedTransactionHex) {
             console.warn("Warning: Fetched transaction hex does not match sent transaction hex. This might be due to server-side re-serialization or an issue.");
         }
 
-
-        await logBalances(connection, senderPublicKeyString, TARGET_PUBLIC_KEY_STRING);
+        //await logBalances(connection, senderPublicKeyString, TARGET_PUBLIC_KEY_STRING);
 
         // 6. Fetch Transaction History for the sender
-        await fetchAndLogTransactionHistory(connection, senderPublicKeyString);
+        //await fetchAndLogTransactionHistory(connection, senderPublicKeyString);
         // Optionally, fetch for the receiver too
         // await fetchAndLogTransactionHistory(connection, TARGET_PUBLIC_KEY_STRING);
 

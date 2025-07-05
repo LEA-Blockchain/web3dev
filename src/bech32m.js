@@ -10,12 +10,12 @@ const BECH32M_CONST = 0x2bc830a3; // Using Bech32m checksum constant
 /** Represents the data type or version being encoded. */
 const DATA_VERSION_BYTE = null; // Set to null if no version byte needed
 /** Minimum allowed length in bytes for the data being encoded (e.g., public key). */
-const MIN_DATA_LENGTH_BYTES = 32; // <<< ADJUSTED FOR 32-byte PUBLIC KEY
+const MIN_DATA_LENGTH_BYTES = 16; // <<< ADJUSTED FOR 32-byte PUBLIC KEY
 /** Maximum allowed length in bytes for the data being encoded (e.g., public key). */
-const MAX_DATA_LENGTH_BYTES = 32; // <<< ADJUSTED FOR 32-byte PUBLIC KEY
+const MAX_DATA_LENGTH_BYTES = 64; // <<< ADJUSTED FOR 64-byte PUBLIC KEY
 
 // BIP-173 constants (generally stay the same)
-const MAX_BECH32_LENGTH = 90;
+const MAX_BECH32_LENGTH = 200; // MODIFIED from 90 to support 64-byte data
 const MIN_HRP_LENGTH = 1;
 const MAX_HRP_LENGTH = 83;
 const CHECKSUM_LENGTH = 6;
@@ -246,7 +246,7 @@ function _decodeBech32mDataAndValidate(bechString) {
  *
  * @param {string} expectedHrp - The expected human-readable part.
  * @param {string} bech32mString - The BECH32M address string.
- * @returns {{ dataBytes: Array<number> }} The decoded 8-bit data bytes.
+ * @returns {Uint8Array} The decoded 8-bit data bytes.
  * @throws {Error} If decoding fails or validation checks do not pass.
  * @export
  */
@@ -269,7 +269,7 @@ export function decode(expectedHrp, bech32mString) {
         throw new Error(`Invalid decoded data length: ${dataBytes.length} bytes (must be between ${MIN_DATA_LENGTH_BYTES} and ${MAX_DATA_LENGTH_BYTES})`);
     }
 
-    return { dataBytes: dataBytes };
+    return new Uint8Array(dataBytes);
 }
 
 /**

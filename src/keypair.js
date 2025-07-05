@@ -30,12 +30,14 @@ export class KeypairImpl {
 }
 
 const Keypair = {
+    /*
     generate: () => {
         const randomSeed = randomBytes(32);
         const publicKeyBytes = getPublicKey(randomSeed);
         const publicKeyInstance = new PublicKey(publicKeyBytes);
         return new KeypairImpl(publicKeyInstance, randomSeed);
     },
+    */
     fromSecretKey: (secretKey) => {
         if (!secretKey || secretKey.length !== 32) {
             throw new Error("Secret key must be 32 bytes.");

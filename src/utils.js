@@ -43,17 +43,29 @@ class KeyList {
     #resolveKey(key) {
         let bytes = null;
 
-        if (key instanceof Uint8Array) {
+        // THE DEFINITIVE FIX for the TypeError.
+        // This check is reliable across different module contexts.
+        if (Object.prototype.toString.call(key) === '[object Uint8Array]') {
             bytes = key;
-        } else if (key && typeof key.toBytes === 'function') {
-            bytes = key.toBytes();
+        }
+        // This handles your custom Address object.
+        else if (key && typeof key === 'object' && typeof key.toBytes === 'function') {
+            const potentialBytes = key.toBytes();
+            // Also validate the output of toBytes() reliably.
+            if (Object.prototype.toString.call(potentialBytes) === '[object Uint8Array]') {
+                bytes = potentialBytes;
+            }
         }
 
-        if (!(bytes instanceof Uint8Array)) {
-            throw new Error("KeyList: Invalid key type. Key must be a Uint8Array or an object with a .toBytes() method that returns a Uint8Array.");
+        // Final validation
+        if (!bytes) {
+            throw new Error("KeyList: Invalid key type. Key must resolve to a Uint8Array.");
         }
+
         if (bytes.length !== 32) {
-            throw new Error("KeyList: Key must be a 32-byte Uint8Array.");
+            throw new Error(
+                `KeyList: Key must be a 32-byte Uint8Array, but received ${bytes.length} bytes.`
+            );
         }
 
         return bytes;
@@ -110,6 +122,7 @@ class KeyList {
     /**
      * Gets a shallow copy of the keys currently in the list.
      * @returns {Uint8Array[]} An array of Uint8Array keys.
+     _
      */
     getKeys() {
         // Ensure you are slicing the correct array `this._keys`
@@ -133,5 +146,8 @@ class KeyList {
     }
 }
 
+function combineUint8Arrays(arrays) {
+    return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
+}
 // Export the necessary functions and the class
-export { utf8ToBytes, bytesToHex, hexToBytes, randomBytes, KeyList, areUint8ArraysEqual };
+export { utf8ToBytes, bytesToHex, hexToBytes, randomBytes, KeyList, areUint8ArraysEqual, combineUint8Arrays };
