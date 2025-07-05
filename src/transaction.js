@@ -99,7 +99,6 @@ export class Transaction {
 
         /* build a 32byte index array */
         encoder.addVector(combineUint8Arrays(rawKeys));
-
         /* number of instruction in this transaction */
         encoder.addShort(this.#instructions.length);
 
