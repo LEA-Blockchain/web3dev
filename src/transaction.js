@@ -1,11 +1,9 @@
 import { SctpEncoder } from '@leachain/sctp';
 import { KeyList, hexToBytes, combineUint8Arrays } from './utils.js';
-//import { KeypairImpl } from './keypair.js';
-//import { SLHKeypairImpl } from './slh-keypair.js';
 import { SLHPublicKey } from './slh-public.js';
 import { PublicKey } from './publickey.js';
-import { createBLAKE3 } from "hash-wasm";
 import { Address } from './address.js';
+import { MAX_TRANSACTION_SIZE } from './constants.js';
 const recentBlockhashPlaceHolder = new Uint8Array([
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -60,15 +58,11 @@ export class Transaction {
 
         //build transaction without signatures
         const encoder = await this.serializeWithoutSignatures();
-        const unsignedTransaction = encoder.build();
+        const unsignedTransaction = encoder.getBytes();
         const edDsaSignature = await signer.edDsa.sign(unsignedTransaction);
         this.addEdDsaSig(signer.address, edDsaSignature);
-        //We will return the hash of the slh signature
         const slhDsaSignature = await signer.slhDsa.sign(unsignedTransaction);
-        const blake3Hasher = await createBLAKE3();
-        blake3Hasher.update(slhDsaSignature);
-        const slhDsaSignatureHash = blake3Hasher.digest('binary');
-        this.addSlhDsaSig(signer.address, slhDsaSignatureHash);
+        this.addSlhDsaSig(signer.address, slhDsaSignature);
     }
 
     set recentBlockhash(blockHash) {
@@ -84,7 +78,7 @@ export class Transaction {
     async serializeWithoutSignatures() {
         /* build transaction */
         const encoder = await SctpEncoder();
-        encoder.init(2000);
+        encoder.init(MAX_TRANSACTION_SIZE);
 
         const keys = this.#keyList.getKeys();
         const rawKeys = keys.map(key => {
@@ -110,7 +104,6 @@ export class Transaction {
             // programm command data
             encoder.addVector(await ix.toBytes());
         }
-
         return encoder;
     }
 

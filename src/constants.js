@@ -34,7 +34,7 @@ export const ADDRESS_HRP = 'lea';
 export const ADDRESS_BYTE_LENGTH = 32;
 export const CTE_CRYPTO_TYPE_ED25519 = 0;
 export const CTE_CRYPTO_TYPE_SLHDSA = 1;
-export const CTE_MAX_TRANSACTION_SIZE = 2000;
+export const MAX_TRANSACTION_SIZE = 49152; // 48 KiB
 
 // Add other constants as needed:
 // export const DEFAULT_RPC_ENDPOINT = 'http://localhost:8899';

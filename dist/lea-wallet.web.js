@@ -471,6 +471,9 @@ function aoutput(out, instance) {
     throw new Error("digestInto() expects output buffer of length at least " + min);
   }
 }
+function u32(arr) {
+  return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+}
 function clean(...arrays) {
   for (let i = 0; i < arrays.length; i++) {
     arrays[i].fill(0);
@@ -485,6 +488,17 @@ function rotr(word, shift) {
 function rotl(word, shift) {
   return word << shift | word >>> 32 - shift >>> 0;
 }
+var isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+function byteSwap(word) {
+  return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+}
+function byteSwap32(arr) {
+  for (let i = 0; i < arr.length; i++) {
+    arr[i] = byteSwap(arr[i]);
+  }
+  return arr;
+}
+var swap32IfBE = isLE ? (u) => u : byteSwap32;
 var hasHexBuiltin = /* @__PURE__ */ (() => (
   // @ts-ignore
   typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function"
@@ -579,6 +593,14 @@ function createHasher(hashCons) {
   hashC.create = () => hashCons();
   return hashC;
 }
+function createXOFer(hashCons) {
+  const hashC = (msg, opts) => hashCons(opts).update(toBytes(msg)).digest();
+  const tmp = hashCons({});
+  hashC.outputLen = tmp.outputLen;
+  hashC.blockLen = tmp.blockLen;
+  hashC.create = (opts) => hashCons(opts);
+  return hashC;
+}
 function randomBytes(bytesLength = 32) {
   if (crypto && typeof crypto.getRandomValues === "function") {
     return crypto.getRandomValues(new Uint8Array(bytesLength));
@@ -658,17 +680,17 @@ var hmac = (hash, key, message) => new HMAC(hash, key).update(message).digest();
 hmac.create = (hash, key) => new HMAC(hash, key);
 
 // node_modules/@noble/hashes/esm/_md.js
-function setBigUint64(view, byteOffset, value, isLE) {
+function setBigUint64(view, byteOffset, value, isLE2) {
   if (typeof view.setBigUint64 === "function")
-    return view.setBigUint64(byteOffset, value, isLE);
+    return view.setBigUint64(byteOffset, value, isLE2);
   const _32n2 = BigInt(32);
   const _u32_max = BigInt(4294967295);
   const wh = Number(value >> _32n2 & _u32_max);
   const wl = Number(value & _u32_max);
-  const h = isLE ? 4 : 0;
-  const l = isLE ? 0 : 4;
-  view.setUint32(byteOffset + h, wh, isLE);
-  view.setUint32(byteOffset + l, wl, isLE);
+  const h = isLE2 ? 4 : 0;
+  const l = isLE2 ? 0 : 4;
+  view.setUint32(byteOffset + h, wh, isLE2);
+  view.setUint32(byteOffset + l, wl, isLE2);
 }
 function Chi(a, b, c) {
   return a & b ^ ~a & c;
@@ -677,7 +699,7 @@ function Maj(a, b, c) {
   return a & b ^ a & c ^ b & c;
 }
 var HashMD = class extends Hash {
-  constructor(blockLen, outputLen, padOffset, isLE) {
+  constructor(blockLen, outputLen, padOffset, isLE2) {
     super();
     this.finished = false;
     this.length = 0;
@@ -686,7 +708,7 @@ var HashMD = class extends Hash {
     this.blockLen = blockLen;
     this.outputLen = outputLen;
     this.padOffset = padOffset;
-    this.isLE = isLE;
+    this.isLE = isLE2;
     this.buffer = new Uint8Array(blockLen);
     this.view = createView(this.buffer);
   }
@@ -720,7 +742,7 @@ var HashMD = class extends Hash {
     aexists(this);
     aoutput(out, this);
     this.finished = true;
-    const { buffer, view, blockLen, isLE } = this;
+    const { buffer, view, blockLen, isLE: isLE2 } = this;
     let { pos } = this;
     buffer[pos++] = 128;
     clean(this.buffer.subarray(pos));
@@ -730,7 +752,7 @@ var HashMD = class extends Hash {
     }
     for (let i = pos; i < blockLen; i++)
       buffer[i] = 0;
-    setBigUint64(view, blockLen - 8, BigInt(this.length * 8), isLE);
+    setBigUint64(view, blockLen - 8, BigInt(this.length * 8), isLE2);
     this.process(view, 0);
     const oview = createView(out);
     const len = this.outputLen;
@@ -741,7 +763,7 @@ var HashMD = class extends Hash {
     if (outLen > state.length)
       throw new Error("_sha2: outputLen bigger than state");
     for (let i = 0; i < outLen; i++)
-      oview.setUint32(4 * i, state[i], isLE);
+      oview.setUint32(4 * i, state[i], isLE2);
   }
   digest() {
     const { buffer, outputLen } = this;
@@ -775,6 +797,34 @@ var SHA256_IV = /* @__PURE__ */ Uint32Array.from([
   2600822924,
   528734635,
   1541459225
+]);
+var SHA224_IV = /* @__PURE__ */ Uint32Array.from([
+  3238371032,
+  914150663,
+  812702999,
+  4144912697,
+  4290775857,
+  1750603025,
+  1694076839,
+  3204075428
+]);
+var SHA384_IV = /* @__PURE__ */ Uint32Array.from([
+  3418070365,
+  3238371032,
+  1654270250,
+  914150663,
+  2438529370,
+  812702999,
+  355462360,
+  4144912697,
+  1731405415,
+  4290775857,
+  2394180231,
+  1750603025,
+  3675008525,
+  1694076839,
+  1203062813,
+  3204075428
 ]);
 var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
   1779033703,
@@ -940,6 +990,10 @@ var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
 var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
 var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
 var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
 function add(Ah, Al, Bh, Bl) {
   const l = (Al >>> 0) + (Bl >>> 0);
   return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
@@ -1087,6 +1141,19 @@ var SHA256 = class extends HashMD {
   destroy() {
     this.set(0, 0, 0, 0, 0, 0, 0, 0);
     clean(this.buffer);
+  }
+};
+var SHA224 = class extends SHA256 {
+  constructor() {
+    super(28);
+    this.A = SHA224_IV[0] | 0;
+    this.B = SHA224_IV[1] | 0;
+    this.C = SHA224_IV[2] | 0;
+    this.D = SHA224_IV[3] | 0;
+    this.E = SHA224_IV[4] | 0;
+    this.F = SHA224_IV[5] | 0;
+    this.G = SHA224_IV[6] | 0;
+    this.H = SHA224_IV[7] | 0;
   }
 };
 var K512 = /* @__PURE__ */ (() => split([
@@ -1286,8 +1353,111 @@ var SHA512 = class extends HashMD {
     this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   }
 };
+var SHA384 = class extends SHA512 {
+  constructor() {
+    super(48);
+    this.Ah = SHA384_IV[0] | 0;
+    this.Al = SHA384_IV[1] | 0;
+    this.Bh = SHA384_IV[2] | 0;
+    this.Bl = SHA384_IV[3] | 0;
+    this.Ch = SHA384_IV[4] | 0;
+    this.Cl = SHA384_IV[5] | 0;
+    this.Dh = SHA384_IV[6] | 0;
+    this.Dl = SHA384_IV[7] | 0;
+    this.Eh = SHA384_IV[8] | 0;
+    this.El = SHA384_IV[9] | 0;
+    this.Fh = SHA384_IV[10] | 0;
+    this.Fl = SHA384_IV[11] | 0;
+    this.Gh = SHA384_IV[12] | 0;
+    this.Gl = SHA384_IV[13] | 0;
+    this.Hh = SHA384_IV[14] | 0;
+    this.Hl = SHA384_IV[15] | 0;
+  }
+};
+var T224_IV = /* @__PURE__ */ Uint32Array.from([
+  2352822216,
+  424955298,
+  1944164710,
+  2312950998,
+  502970286,
+  855612546,
+  1738396948,
+  1479516111,
+  258812777,
+  2077511080,
+  2011393907,
+  79989058,
+  1067287976,
+  1780299464,
+  286451373,
+  2446758561
+]);
+var T256_IV = /* @__PURE__ */ Uint32Array.from([
+  573645204,
+  4230739756,
+  2673172387,
+  3360449730,
+  596883563,
+  1867755857,
+  2520282905,
+  1497426621,
+  2519219938,
+  2827943907,
+  3193839141,
+  1401305490,
+  721525244,
+  746961066,
+  246885852,
+  2177182882
+]);
+var SHA512_224 = class extends SHA512 {
+  constructor() {
+    super(28);
+    this.Ah = T224_IV[0] | 0;
+    this.Al = T224_IV[1] | 0;
+    this.Bh = T224_IV[2] | 0;
+    this.Bl = T224_IV[3] | 0;
+    this.Ch = T224_IV[4] | 0;
+    this.Cl = T224_IV[5] | 0;
+    this.Dh = T224_IV[6] | 0;
+    this.Dl = T224_IV[7] | 0;
+    this.Eh = T224_IV[8] | 0;
+    this.El = T224_IV[9] | 0;
+    this.Fh = T224_IV[10] | 0;
+    this.Fl = T224_IV[11] | 0;
+    this.Gh = T224_IV[12] | 0;
+    this.Gl = T224_IV[13] | 0;
+    this.Hh = T224_IV[14] | 0;
+    this.Hl = T224_IV[15] | 0;
+  }
+};
+var SHA512_256 = class extends SHA512 {
+  constructor() {
+    super(32);
+    this.Ah = T256_IV[0] | 0;
+    this.Al = T256_IV[1] | 0;
+    this.Bh = T256_IV[2] | 0;
+    this.Bl = T256_IV[3] | 0;
+    this.Ch = T256_IV[4] | 0;
+    this.Cl = T256_IV[5] | 0;
+    this.Dh = T256_IV[6] | 0;
+    this.Dl = T256_IV[7] | 0;
+    this.Eh = T256_IV[8] | 0;
+    this.El = T256_IV[9] | 0;
+    this.Fh = T256_IV[10] | 0;
+    this.Fl = T256_IV[11] | 0;
+    this.Gh = T256_IV[12] | 0;
+    this.Gl = T256_IV[13] | 0;
+    this.Hh = T256_IV[14] | 0;
+    this.Hl = T256_IV[15] | 0;
+  }
+};
 var sha256 = /* @__PURE__ */ createHasher(() => new SHA256());
+var sha224 = /* @__PURE__ */ createHasher(() => new SHA224());
 var sha512 = /* @__PURE__ */ createHasher(() => new SHA512());
+var sha384 = /* @__PURE__ */ createHasher(() => new SHA384());
+var sha512_256 = /* @__PURE__ */ createHasher(() => new SHA512_256());
+var sha512_224 = /* @__PURE__ */ createHasher(() => new SHA512_224());
 
 // node_modules/@noble/hashes/esm/sha256.js
 var sha2562 = sha256;
@@ -1638,9 +1808,9 @@ var CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 var GENERATOR = [996825010, 642813549, 513874426, 1027748829, 705979059];
 var BECH32M_CONST = 734539939;
 var DATA_VERSION_BYTE = null;
-var MIN_DATA_LENGTH_BYTES = 32;
-var MAX_DATA_LENGTH_BYTES = 32;
-var MAX_BECH32_LENGTH = 90;
+var MIN_DATA_LENGTH_BYTES = 16;
+var MAX_DATA_LENGTH_BYTES = 64;
+var MAX_BECH32_LENGTH = 200;
 var MIN_HRP_LENGTH = 1;
 var MAX_HRP_LENGTH = 83;
 var CHECKSUM_LENGTH = 6;
@@ -1791,7 +1961,7 @@ function decode(expectedHrp, bech32mString) {
   if (dataBytes.length < MIN_DATA_LENGTH_BYTES || dataBytes.length > MAX_DATA_LENGTH_BYTES) {
     throw new Error(`Invalid decoded data length: ${dataBytes.length} bytes (must be between ${MIN_DATA_LENGTH_BYTES} and ${MAX_DATA_LENGTH_BYTES})`);
   }
-  return { dataBytes };
+  return new Uint8Array(dataBytes);
 }
 function encode(hrp, dataBytes) {
   if (typeof hrp !== "string" || hrp.length < MIN_HRP_LENGTH || hrp.length > MAX_HRP_LENGTH) {
@@ -1823,8 +1993,15 @@ function encode(hrp, dataBytes) {
 
 // src/constants.js
 var LEA_COIN_TYPE = 2323;
-var DEFAULT_ACCOUNT_DERIVATION_BASE = `m/44'/${LEA_COIN_TYPE}'`;
+var BIP44_PURPOSE = 44;
+var SLHDSA_PQC_PURPOSE = 211;
+var SLHDSA_DERIVATION_BASE = `m/${SLHDSA_PQC_PURPOSE}'/${LEA_COIN_TYPE}'`;
+var ED25519_DERIVATION_BASE = `m/${BIP44_PURPOSE}'/${LEA_COIN_TYPE}'`;
 var ADDRESS_HRP = "lea";
+var ADDRESS_BYTE_LENGTH = 32;
+var CTE_CRYPTO_TYPE_ED25519 = 0;
+var CTE_CRYPTO_TYPE_SLHDSA = 1;
+var MAX_TRANSACTION_SIZE = 49152;
 var LEA_SYSTEM_PROGRAM = new Uint8Array([
   255,
   255,
@@ -1863,6 +2040,7 @@ var LEA_SYSTEM_PROGRAM = new Uint8Array([
 // src/publickey.js
 var PublicKey = class {
   #bytes;
+  keyType = CTE_CRYPTO_TYPE_ED25519;
   constructor(value) {
     if (typeof value === "string") {
       try {
@@ -1898,14 +2076,16 @@ var PublicKey = class {
   toBytes() {
     return Uint8Array.from(this.#bytes);
   }
-  toString() {
-    try {
-      return encode(ADDRESS_HRP, this.#bytes);
-    } catch (error) {
-      console.error("PublicKey Bech32m encoding failed:", error);
-      throw new Error("Failed to encode public key as Bech32m.");
-    }
-  }
+  /*
+      toString() {
+          try {
+              return bech32mEncode(ADDRESS_HRP, this.#bytes);
+          } catch (error) {
+              console.error("PublicKey Bech32m encoding failed:", error);
+              throw new Error("Failed to encode public key as Bech32m.");
+          }
+      }
+  */
   equals(other) {
     if (!other || typeof other.toBytes !== "function") {
       return false;
@@ -1944,12 +2124,14 @@ var KeypairImpl = class {
   }
 };
 var Keypair = {
+  /*
   generate: () => {
-    const randomSeed = randomBytes(32);
-    const publicKeyBytes = getPublicKey(randomSeed);
-    const publicKeyInstance = new PublicKey(publicKeyBytes);
-    return new KeypairImpl(publicKeyInstance, randomSeed);
+      const randomSeed = randomBytes(32);
+      const publicKeyBytes = getPublicKey(randomSeed);
+      const publicKeyInstance = new PublicKey(publicKeyBytes);
+      return new KeypairImpl(publicKeyInstance, randomSeed);
   },
+  */
   fromSecretKey: (secretKey) => {
     if (!secretKey || secretKey.length !== 32) {
       throw new Error("Secret key must be 32 bytes.");
@@ -1960,1018 +2142,813 @@ var Keypair = {
   }
 };
 
-// src/wallet.js
-var WalletImpl = class {
-  /**
-   * The master HDKey derived from the seed.
-   * @type {HDKey}
-   */
-  #masterKey;
-  /**
-   * Creates an instance of WalletImpl. Use Wallet.fromMnemonic.
-   * @param {HDKey} masterKey - The master HDKey object.
-   * @hideconstructor
-   */
-  constructor(masterKey) {
-    if (!(masterKey instanceof HDKey)) {
-      throw new Error("Invalid masterKey provided to WalletImpl constructor.");
-    }
-    this.#masterKey = masterKey;
+// node_modules/@noble/hashes/esm/sha3.js
+var _0n = BigInt(0);
+var _1n = BigInt(1);
+var _2n = BigInt(2);
+var _7n = BigInt(7);
+var _256n = BigInt(256);
+var _0x71n = BigInt(113);
+var SHA3_PI = [];
+var SHA3_ROTL = [];
+var _SHA3_IOTA = [];
+for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
+  [x, y] = [y, (2 * x + 3 * y) % 5];
+  SHA3_PI.push(2 * (5 * y + x));
+  SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+  let t = _0n;
+  for (let j = 0; j < 7; j++) {
+    R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
+    if (R & _2n)
+      t ^= _1n << (_1n << /* @__PURE__ */ BigInt(j)) - _1n;
   }
-  /**
-   * Derives a Keypair using a BIP-44 derivation path string.
-   * @param {string} path - The derivation path (e.g., "m/44'/2323'/0'/0'").
-   * @returns {KeypairDef} The derived Keypair.
-   * @throws {Error} if the path is invalid or derivation fails.
-   */
-  deriveAccount(path) {
-    try {
-      const derivedHDKey = this.#masterKey.derive(path);
-      return Keypair.fromSecretKey(derivedHDKey.privateKey);
-    } catch (error) {
-      console.error(`Error deriving account for path ${path}:`, error);
-      throw new Error(`Failed to derive account for path ${path}.`);
-    }
-  }
-  /**
-   * Derives a Keypair using a simple account index based on SLIP-0010 pattern.
-   * Uses the path `m/44'/COIN_TYPE'/{index}'`. Index MUST be hardened.
-   * @param {number} index - The account index (e.g., 0, 1, 2...).
-   * @returns {KeypairDef} The derived Keypair.
-   * @throws {Error} if the index is invalid or derivation fails.
-   */
-  getAccount(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const path = `${DEFAULT_ACCOUNT_DERIVATION_BASE}/${index}'`;
-    return this.deriveAccount(path);
-  }
-  /**
-   * Exports the raw private key for a derived account at a specific index.
-   * Uses the path `m/44'/COIN_TYPE'/{index}'`. Index MUST be hardened.
-   * Use with extreme caution.
-   * @param {number} index - The account index.
-   * @returns {Uint8Array} The raw private key (secret key) as a byte array.
-   * @throws {Error} if the index is invalid or derivation fails.
-   */
-  exportPrivateKey(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const path = `${DEFAULT_ACCOUNT_DERIVATION_BASE}/${index}'`;
-    try {
-      const derivedHDKey = this.#masterKey.derive(path);
-      return Uint8Array.from(derivedHDKey.privateKey);
-    } catch (error) {
-      console.error(`Error exporting private key for index ${index}:`, error);
-      throw new Error(`Failed to export private key for index ${index}.`);
-    }
-  }
-};
-var Wallet = {
-  /**
-   * Creates a Wallet instance from a BIP-39 mnemonic phrase using @scure/bip39.
-   * Uses synchronous seed generation.
-   * @param {string} mnemonic - The seed phrase.
-   * @param {string} [passphrase] - (Optional) BIP-39 passphrase.
-   * @returns {WalletDef} A new Wallet instance.
-   * @throws {Error} if the mnemonic is invalid according to the English wordlist.
-   */
-  fromMnemonic: (mnemonic, passphrase) => {
-    const seed = mnemonicToSeed(mnemonic, passphrase);
-    const masterKey = HDKey.fromMasterSeed(seed);
-    return new WalletImpl(masterKey);
-  }
-};
-
-// src/connection.js
-var ConnectionImpl = class {
-  constructor(cluster = "devnet") {
-    this.url = this._resolveClusterUrl(cluster);
-  }
-  _resolveClusterUrl(cluster) {
-    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) {
-      return cluster;
-    }
-    const clusterUrls = {
-      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
-      devnet: "https://api.devnet.getlea.org",
-      testnet: "https://api.testnet.getlea.org",
-      local: "http://localhost:3000",
-      // Default for local development
-      localhost: "http://localhost:3000"
-    };
-    if (!clusterUrls[cluster]) {
-      throw new Error(`Unknown cluster: ${cluster}`);
-    }
-    return clusterUrls[cluster];
-  }
-  async _sendRequest(method, params) {
-    const requestBody = {
-      jsonrpc: "1.0",
-      // Assuming your server still uses 1.0
-      id: 1,
-      // Default ID, can be made dynamic if needed
-      method
-    };
-    if (params !== void 0) {
-      requestBody.params = params;
-    }
-    const response = await fetch(this.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error from ${this.url} for method '${method}': ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(`RPC error from ${this.url} for method '${method}': ${data.error.message} (Code: ${data.error.code})`);
-    }
-    if (data.result === void 0) {
-      throw new Error(`Malformed response from ${this.url} for method '${method}': Missing 'result' field. Response: ${JSON.stringify(data)}`);
-    }
-    return data.result;
-  }
-  /**
-   * Retrieves the current RPC API version.
-   * @returns {Promise<object>} A promise that resolves to the version information.
-   */
-  getVersion() {
-    return this._sendRequest("getVersion");
-  }
-  /**
-   * Retrieves the latest blockhash.
-   * @returns {Promise<object>} A promise that resolves to an object containing the blockhash.
-   */
-  getLatestBlockhash() {
-    return this._sendRequest("getLatestBlockhash");
-  }
-  /**
-   * Sends a transaction to the network.
-   * @param {string | Array<string>} txInput - The hex-encoded serialized transaction,
-   * either as a direct string or as an array containing a single hex string.
-   * @returns {Promise<Array<string>>} A promise that resolves to an array containing the transaction ID.
-   */
-  sendTransaction(txInput) {
-    let paramsForServer;
-    if (typeof txInput === "string") {
-      paramsForServer = [txInput];
-    } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === "string") {
-      paramsForServer = txInput;
-    } else {
-      if (txInput instanceof Uint8Array) {
-        return Promise.reject(new Error("Invalid input for sendTransaction: Received Uint8Array. Please provide a hex-encoded string."));
+  _SHA3_IOTA.push(t);
+}
+var IOTAS = split(_SHA3_IOTA, true);
+var SHA3_IOTA_H = IOTAS[0];
+var SHA3_IOTA_L = IOTAS[1];
+var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
+var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
+function keccakP(s, rounds = 24) {
+  const B = new Uint32Array(5 * 2);
+  for (let round = 24 - rounds; round < 24; round++) {
+    for (let x = 0; x < 10; x++)
+      B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+    for (let x = 0; x < 10; x += 2) {
+      const idx1 = (x + 8) % 10;
+      const idx0 = (x + 2) % 10;
+      const B0 = B[idx0];
+      const B1 = B[idx0 + 1];
+      const Th = rotlH(B0, B1, 1) ^ B[idx1];
+      const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+      for (let y = 0; y < 50; y += 10) {
+        s[x + y] ^= Th;
+        s[x + y + 1] ^= Tl;
       }
-      return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
     }
-    return this._sendRequest("sendTransaction", paramsForServer);
+    let curH = s[2];
+    let curL = s[3];
+    for (let t = 0; t < 24; t++) {
+      const shift = SHA3_ROTL[t];
+      const Th = rotlH(curH, curL, shift);
+      const Tl = rotlL(curH, curL, shift);
+      const PI = SHA3_PI[t];
+      curH = s[PI];
+      curL = s[PI + 1];
+      s[PI] = Th;
+      s[PI + 1] = Tl;
+    }
+    for (let y = 0; y < 50; y += 10) {
+      for (let x = 0; x < 10; x++)
+        B[x] = s[y + x];
+      for (let x = 0; x < 10; x++)
+        s[y + x] ^= ~B[(x + 2) % 10] & B[(x + 4) % 10];
+    }
+    s[0] ^= SHA3_IOTA_H[round];
+    s[1] ^= SHA3_IOTA_L[round];
   }
-  /**
-   * Retrieves the balances for an array of account public keys.
-   * @param {Array<string>} accountPublicKeys - An array of account public key strings.
-   * @returns {Promise<Array<string>>} A promise that resolves to an array of balance strings.
-   */
-  getBalance(accountPublicKeys) {
-    if (!Array.isArray(accountPublicKeys)) {
-      return Promise.reject(new Error("Invalid input for getBalance: Expected an array of public key strings."));
-    }
-    return this._sendRequest("getBalance", accountPublicKeys);
+  clean(B);
+}
+var Keccak = class _Keccak extends Hash {
+  // NOTE: we accept arguments in bytes instead of bits here.
+  constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+    super();
+    this.pos = 0;
+    this.posOut = 0;
+    this.finished = false;
+    this.destroyed = false;
+    this.enableXOF = false;
+    this.blockLen = blockLen;
+    this.suffix = suffix;
+    this.outputLen = outputLen;
+    this.enableXOF = enableXOF;
+    this.rounds = rounds;
+    anumber(outputLen);
+    if (!(0 < blockLen && blockLen < 200))
+      throw new Error("only keccak-f1600 function is supported");
+    this.state = new Uint8Array(200);
+    this.state32 = u32(this.state);
   }
-  /**
-   * Retrieves a specific transaction by its ID.
-   * @param {string} transactionId - The ID (hash) of the transaction.
-   * @returns {Promise<string>} A promise that resolves to the hex-encoded binary transaction data.
-   */
-  getTransaction(transactionId) {
-    if (typeof transactionId !== "string") {
-      return Promise.reject(new Error("Invalid input for getTransaction: Expected a transaction ID string."));
-    }
-    return this._sendRequest("getTransaction", [transactionId]);
+  clone() {
+    return this._cloneInto();
   }
-  /**
-   * Retrieves transactions for a specific account, with pagination.
-   * @param {object} options - Options for fetching transactions.
-   * @param {string} options.accountKey - The public key of the account.
-   * @param {number} [options.limit=10] - The maximum number of transactions to return.
-   * @param {string} [options.before] - A transaction ID to fetch transactions older than this one (for pagination).
-   * @returns {Promise<object>} A promise that resolves to an object containing an array of hex-encoded transactions and a 'nextBefore' cursor.
-   * Example: { transactions: ["hexTx1", "hexTx2"], nextBefore: "lastTxIdInList" | null }
-   */
-  getTransactionsForAccount(options) {
-    if (!options || typeof options.accountKey !== "string") {
-      return Promise.reject(new Error("getTransactionsForAccount requires an options object with an 'accountKey' string."));
+  keccak() {
+    swap32IfBE(this.state32);
+    keccakP(this.state32, this.rounds);
+    swap32IfBE(this.state32);
+    this.posOut = 0;
+    this.pos = 0;
+  }
+  update(data) {
+    aexists(this);
+    data = toBytes(data);
+    abytes(data);
+    const { blockLen, state } = this;
+    const len = data.length;
+    for (let pos = 0; pos < len; ) {
+      const take = Math.min(blockLen - this.pos, len - pos);
+      for (let i = 0; i < take; i++)
+        state[this.pos++] ^= data[pos++];
+      if (this.pos === blockLen)
+        this.keccak();
     }
-    return this._sendRequest("getTransactionsForAccount", [options]);
+    return this;
+  }
+  finish() {
+    if (this.finished)
+      return;
+    this.finished = true;
+    const { state, suffix, pos, blockLen } = this;
+    state[pos] ^= suffix;
+    if ((suffix & 128) !== 0 && pos === blockLen - 1)
+      this.keccak();
+    state[blockLen - 1] ^= 128;
+    this.keccak();
+  }
+  writeInto(out) {
+    aexists(this, false);
+    abytes(out);
+    this.finish();
+    const bufferOut = this.state;
+    const { blockLen } = this;
+    for (let pos = 0, len = out.length; pos < len; ) {
+      if (this.posOut >= blockLen)
+        this.keccak();
+      const take = Math.min(blockLen - this.posOut, len - pos);
+      out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+      this.posOut += take;
+      pos += take;
+    }
+    return out;
+  }
+  xofInto(out) {
+    if (!this.enableXOF)
+      throw new Error("XOF is not possible for this instance");
+    return this.writeInto(out);
+  }
+  xof(bytes) {
+    anumber(bytes);
+    return this.xofInto(new Uint8Array(bytes));
+  }
+  digestInto(out) {
+    aoutput(out, this);
+    if (this.finished)
+      throw new Error("digest() was already called");
+    this.writeInto(out);
+    this.destroy();
+    return out;
+  }
+  digest() {
+    return this.digestInto(new Uint8Array(this.outputLen));
+  }
+  destroy() {
+    this.destroyed = true;
+    clean(this.state);
+  }
+  _cloneInto(to) {
+    const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+    to || (to = new _Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+    to.state32.set(this.state32);
+    to.pos = this.pos;
+    to.posOut = this.posOut;
+    to.finished = this.finished;
+    to.rounds = rounds;
+    to.suffix = suffix;
+    to.outputLen = outputLen;
+    to.enableXOF = enableXOF;
+    to.destroyed = this.destroyed;
+    return to;
   }
 };
-var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
+var gen = (suffix, blockLen, outputLen) => createHasher(() => new Keccak(blockLen, suffix, outputLen));
+var sha3_224 = /* @__PURE__ */ (() => gen(6, 144, 224 / 8))();
+var sha3_256 = /* @__PURE__ */ (() => gen(6, 136, 256 / 8))();
+var sha3_384 = /* @__PURE__ */ (() => gen(6, 104, 384 / 8))();
+var sha3_512 = /* @__PURE__ */ (() => gen(6, 72, 512 / 8))();
+var genShake = (suffix, blockLen, outputLen) => createXOFer((opts = {}) => new Keccak(blockLen, suffix, opts.dkLen === void 0 ? outputLen : opts.dkLen, true));
+var shake128 = /* @__PURE__ */ (() => genShake(31, 168, 128 / 8))();
+var shake256 = /* @__PURE__ */ (() => genShake(31, 136, 256 / 8))();
 
-// node_modules/@leachain/cte-core/dist/cte-core.web.js
-var __toBinary = /* @__PURE__ */ (() => {
-  var table = new Uint8Array(128);
-  for (var i = 0; i < 64; i++) table[i < 26 ? i + 65 : i < 52 ? i + 71 : i < 62 ? i - 4 : i * 4 - 205] = i;
-  return (base64) => {
-    var n = base64.length, bytes = new Uint8Array((n - (base64[n - 1] == "=") - (base64[n - 2] == "=")) * 3 / 4 | 0);
-    for (var i2 = 0, j = 0; i2 < n; ) {
-      var c0 = table[base64.charCodeAt(i2++)], c1 = table[base64.charCodeAt(i2++)];
-      var c2 = table[base64.charCodeAt(i2++)], c3 = table[base64.charCodeAt(i2++)];
-      bytes[j++] = c0 << 2 | c1 >> 4;
-      bytes[j++] = c1 << 4 | c2 >> 2;
-      bytes[j++] = c2 << 6 | c3;
+// node_modules/@noble/post-quantum/esm/utils.js
+var ensureBytes2 = abytes;
+var randomBytes2 = randomBytes;
+function equalBytes(a, b) {
+  if (a.length !== b.length)
+    return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++)
+    diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+function splitCoder(...lengths) {
+  const getLength = (c) => typeof c === "number" ? c : c.bytesLen;
+  const bytesLen = lengths.reduce((sum, a) => sum + getLength(a), 0);
+  return {
+    bytesLen,
+    encode: (bufs) => {
+      const res = new Uint8Array(bytesLen);
+      for (let i = 0, pos = 0; i < lengths.length; i++) {
+        const c = lengths[i];
+        const l = getLength(c);
+        const b = typeof c === "number" ? bufs[i] : c.encode(bufs[i]);
+        ensureBytes2(b, l);
+        res.set(b, pos);
+        if (typeof c !== "number")
+          b.fill(0);
+        pos += l;
+      }
+      return res;
+    },
+    decode: (buf) => {
+      ensureBytes2(buf, bytesLen);
+      const res = [];
+      for (const c of lengths) {
+        const l = getLength(c);
+        const b = buf.subarray(0, l);
+        res.push(typeof c === "number" ? b : c.decode(b));
+        buf = buf.subarray(l);
+      }
+      return res;
     }
-    return bytes;
   };
-})();
-var encoder_mvp_default = __toBinary("AGFzbQEAAAABMglgAX8Bf2ACf38Bf2ADf39/AX9gAX8AYAJ/fwBgAn99AGAEf39/fwBgAn98AGACf34AAxsaAAABAgIAAAADBAUGBwQEBAgECAQECAQIAgAEBQFwAQEBBQMBAAIGCAF/AUGwiAYLB+QFGQZtZW1vcnkCABNnZXRfcHVibGljX2tleV9zaXplAAAXZ2V0X3NpZ25hdHVyZV9pdGVtX3NpemUAARBjdGVfZW5jb2Rlcl9pbml0AAcGbWFsbG9jABkRY3RlX2VuY29kZXJfcmVzZXQACBRjdGVfZW5jb2Rlcl9nZXRfZGF0YQAFFGN0ZV9lbmNvZGVyX2dldF9zaXplAAYhY3RlX2VuY29kZXJfYmVnaW5fcHVibGljX2tleV9saXN0AAMgY3RlX2VuY29kZXJfYmVnaW5fc2lnbmF0dXJlX2xpc3QABChjdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfaW5kZXhfcmVmZXJlbmNlAA0gY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX3VsZWIxMjgAFyBjdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfc2xlYjEyOAASHWN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV9pbnQ4ABEeY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2ludDE2AA4eY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2ludDMyAA8eY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2ludDY0ABAeY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX3VpbnQ4ABYfY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX3VpbnQxNgATH2N0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV91aW50MzIAFB9jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfdWludDY0ABUgY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2Zsb2F0MzIACiBjdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfZmxvYXQ2NAAMIGN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV9ib29sZWFuAAkeY3RlX2VuY29kZXJfYmVnaW5fY29tbWFuZF9kYXRhAAIKshEaIwACQCAAQQRJDQAAAAsgAEEYdEEYdUECdEGAiICAAGooAgALIwACQCAAQQRJDQAAAAsgAEEYdEEYdUECdEGQiICAAGooAgALsQEBA38CQCAARQ0AAkACQCABQR9LDQBBASECIAFBAWoiAyAAKAIIIgRqIAAoAgRLDQIgACgCACAEaiABQcABcjoAAAwBCyABQa0JSw0BQQIhAiABQQJqIgMgACgCCCIEaiAAKAIESw0BIAAoAgAgBGogAUEGdkEccUHgAXI6AAAgACgCCCAAKAIAakEBaiABOgAACyAAIAMgACgCCCIBajYCCCABIAAoAgBqIAJqDwsAAAuFAQECfwJAIABFDQAgAUFwakH/AXFB8AFNDQAgAkEETw0AIAJBGHRBGHVBAnRBgIiAgABqKAIAIAFsQQFqIgMgACgCCCIEaiAAKAIESw0AIAAoAgAgBGogAUECdEE8cSACQQNxcjoAACAAIAAoAggiASADajYCCCABIAAoAgBqQQFqDwsAAAuJAQECfwJAIABFDQAgAUFwakH/AXFB8AFNDQAgAkEETw0AIAJBGHRBGHVBAnRBkIiAgABqKAIAIAFsQQFqIgMgACgCCCIEaiAAKAIESw0AIAAoAgAgBGogAkEDcSABQQJ0QTxxckHAAHI6AAAgACAAKAIIIgEgA2o2AgggASAAKAIAakEBag8LAAALEAACQCAADQAAAAsgACgCAAsQAAJAIAANAAAACyAAKAIIC5kBAQd/AkAgAEUNAEEAQQAoAqCIgIAAIgEgAUEMaiICIAJBgIACSyIDGyIEQbCIgIAAaiAEIABqIgVBgIACSyIGGyEHQQAgAUGwiICAAGogAxshAQJAAkAgAkGBgAJJDQAgBg0BC0EAIAQgBSAGGzYCoIiAgAALIAFBATYCCCABIAA2AgQgASAHNgIAIAdB8QE6AAAgAQ8LAAALLgACQCAARQ0AIABBADYCCCAAKAIERQ0AIABBATYCCCAAKAIAQfEBOgAADwsAAAs+AQJ/AkAgAEUNACAAKAIIIgJBAWoiAyAAKAIESw0AIAAgAzYCCCAAKAIAIAJqQYd/QYN/IAEbOgAADwsAAAs4AQF/I4CAgIAAQRBrIgIkgICAgAAgAiABOAIMIABBCEEEIAJBDGoQi4CAgAAgAkEQaiSAgICAAAtsAQJ/AkAgAEUNACADRQ0AIAAoAggiBEEBaiIFIAJqIAAoAgRLDQAgACAFNgIIIAAoAgAgBGogAUECdEE8cUGCAXI6AAAgACgCACAAKAIIaiADIAIQmICAgAAaIAAgACgCCCACajYCCA8LAAALOAEBfyOAgICAAEEQayICJICAgIAAIAIgATkDCCAAQQlBCCACQQhqEIuAgIAAIAJBEGokgICAgAALSAECfwJAIABFDQAgAUEQTw0AIAAoAggiAkEBaiIDIAAoAgRLDQAgACADNgIIIAAoAgAgAmogAUECdEE8cUGAAXI6AAAPCwAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE7AQ4gAEEBQQIgAkEOahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE2AgwgAEECQQQgAkEMahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE3AwggAEEDQQggAkEIahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE6AA8gAEEAQQEgAkEPahCLgICAACACQRBqJICAgIAAC9wBAwR/AX4BfwJAAkAgAEUNACAAKAIIIgJBAWogACgCBEsNACAAKAIAIAJqQYkBOgAAIAAoAggiAkEBdEECaiAAKAIESw0AIAIgACgCAGpBAWohAyACQQJqIQRBACECA0AgAadB/wBxIQUCQCABQj9WDQAgAyACaiAFOgAADAMLIAMgAmpBAEGAfyABQgeHIgZCf1EgAULAAINCBoincSIHGyAFcjoAACAHDQIgBiEBIAQgACgCCGogAkEBaiICaiAAKAIETQ0ACwsAAAsgACAAKAIIIAJqQQJqNgIICzgBAX8jgICAgABBEGsiAiSAgICAACACIAE7AQ4gAEEFQQIgAkEOahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE2AgwgAEEGQQQgAkEMahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE3AwggAEEHQQggAkEIahCLgICAACACQRBqJICAgIAACzgBAX8jgICAgABBEGsiAiSAgICAACACIAE6AA8gAEEEQQEgAkEPahCLgICAACACQRBqJICAgIAAC7EBAQN/AkACQCAARQ0AIAAoAggiAkEBaiAAKAIESw0AIAAoAgAgAmpBhQE6AAAgACgCCCICQQF0QQJqIAAoAgRLDQAgAiAAKAIAakEBaiEDIAJBAmohBEEAIQIDQCADIAJqIAGnQf8AcSABQv8AVkEHdHI6AAAgAUKAAVQNAiABQgeIIQEgBCAAKAIIaiACQQFqIgJqIAAoAgRNDQALCwAACyAAIAAoAgggAmpBAmo2AggLuwEBBH8CQCACRQ0AIAJBA3EhA0EAIQQCQCACQX9qQQNJDQAgAkF8cSEFQQAhBANAIAAgBGoiAiABIARqIgYtAAA6AAAgAkEBaiAGQQFqLQAAOgAAIAJBAmogBkECai0AADoAACACQQNqIAZBA2otAAA6AAAgBSAEQQRqIgRHDQALCyADRQ0AIAEgBGohAiAAIARqIQQDQCAEIAItAAA6AAAgAkEBaiECIARBAWohBCADQX9qIgMNAAsLIAALOgECf0EAIQECQEEAKAKgiICAACICIABqIgBBgIACSw0AQQAgADYCoIiAgAAgAkGwiICAAGohAQsgAQsLJwEAQYAICyAgAAAAIAAAADAAAABAAAAAQAAAACAAAAAgAAAAIAAAAACOBgRuYW1lAeYFGgATZ2V0X3B1YmxpY19rZXlfc2l6ZQEXZ2V0X3NpZ25hdHVyZV9pdGVtX3NpemUCHmN0ZV9lbmNvZGVyX2JlZ2luX2NvbW1hbmRfZGF0YQMhY3RlX2VuY29kZXJfYmVnaW5fcHVibGljX2tleV9saXN0BCBjdGVfZW5jb2Rlcl9iZWdpbl9zaWduYXR1cmVfbGlzdAUUY3RlX2VuY29kZXJfZ2V0X2RhdGEGFGN0ZV9lbmNvZGVyX2dldF9zaXplBxBjdGVfZW5jb2Rlcl9pbml0CBFjdGVfZW5jb2Rlcl9yZXNldAkgY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2Jvb2xlYW4KIGN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV9mbG9hdDMyCxl3cml0ZV9maXhlZF9kYXRhX2ludGVybmFsDCBjdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfZmxvYXQ2NA0oY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2luZGV4X3JlZmVyZW5jZQ4eY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2ludDE2Dx5jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfaW50MzIQHmN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV9pbnQ2NBEdY3RlX2VuY29kZXJfd3JpdGVfaXhkYXRhX2ludDgSIGN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV9zbGViMTI4Ex9jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfdWludDE2FB9jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfdWludDMyFR9jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfdWludDY0Fh5jdGVfZW5jb2Rlcl93cml0ZV9peGRhdGFfdWludDgXIGN0ZV9lbmNvZGVyX3dyaXRlX2l4ZGF0YV91bGViMTI4GAZtZW1jcHkZBm1hbGxvYwcSAQAPX19zdGFja19wb2ludGVyCQoBAAcucm9kYXRhAC0JcHJvZHVjZXJzAQxwcm9jZXNzZWQtYnkBDERlYmlhbiBjbGFuZwYxNC4wLjY=");
-var CteEncoder = class _CteEncoder {
-  #wasmInstance = null;
-  #wasmMemory = null;
-  #wasmExports = null;
-  #encoderHandle = 0;
-  // Pointer to C struct cte_encoder_t*
-  /**
-   * @private
-   * @description Internal constructor. Use static `CteEncoder.create()` method instead.
-   * @param {WebAssembly.Instance} wasmInstance - The instantiated encoder WASM module for this object.
-   * @param {DataView} wasmMemory - A DataView for this instance's WASM memory.
-   * @param {number} encoderHandle - The pointer (handle) to the C encoder context (`cte_encoder_t*`).
-   */
-  constructor(wasmInstance, wasmMemory, encoderHandle) {
-    this.#wasmInstance = wasmInstance;
-    this.#wasmMemory = wasmMemory;
-    this.#wasmExports = wasmInstance.exports;
-    this.#encoderHandle = encoderHandle;
-  }
-  /**
-   * @static
-   * @async
-   * @description Asynchronously creates and initializes a new, independent CTE encoder instance.
-   * Loads and instantiates a fresh copy of the encoder WASM module for this instance.
-   * @param {number} capacity - The fixed buffer capacity in bytes for the encoder. Should be large enough for the expected transaction.
-   * @returns {Promise<CteEncoder>} A promise that resolves to the initialized CteEncoder instance.
-   * @throws {Error} If WASM binary is invalid, instantiation fails, exports are missing, or C-level encoder initialization (`cte_encoder_init`) fails.
-   * @example
-   * import { CteEncoder } from '@leachain/ctejs-core'; // Use package name
-   *
-   * async function main() {
-   * try {
-   * // Each call creates a new WASM instance
-   * const encoder1 = await CteEncoder.create(1024);
-   * const encoder2 = await CteEncoder.create(2048);
-   * console.log('Encoders ready!');
-   * } catch (err) {
-   * console.error("Failed to create encoder:", err);
-   * }
-   * }
-   * main();
-   */
-  static async create(capacity) {
-    const importObject = {
-      env: {
-        abort: () => {
-          throw new Error(`WASM Encoder aborted`);
-        }
+}
+function vecCoder(c, vecLen) {
+  const bytesLen = vecLen * c.bytesLen;
+  return {
+    bytesLen,
+    encode: (u) => {
+      if (u.length !== vecLen)
+        throw new Error(`vecCoder.encode: wrong length=${u.length}. Expected: ${vecLen}`);
+      const res = new Uint8Array(bytesLen);
+      for (let i = 0, pos = 0; i < u.length; i++) {
+        const b = c.encode(u[i]);
+        res.set(b, pos);
+        b.fill(0);
+        pos += b.length;
       }
-    };
-    const requiredExports = [
-      "memory",
-      "get_public_key_size",
-      "get_signature_item_size",
-      //
-      "cte_encoder_init",
-      "cte_encoder_reset",
-      "cte_encoder_get_data",
-      "cte_encoder_get_size",
-      //
-      "cte_encoder_begin_public_key_list",
-      "cte_encoder_begin_signature_list",
-      //
-      "cte_encoder_write_ixdata_index_reference",
-      "cte_encoder_write_ixdata_uleb128",
-      //
-      "cte_encoder_write_ixdata_sleb128",
-      "cte_encoder_write_ixdata_int8",
-      //
-      "cte_encoder_write_ixdata_uint8",
-      "cte_encoder_write_ixdata_int16",
-      //
-      "cte_encoder_write_ixdata_uint16",
-      "cte_encoder_write_ixdata_int32",
-      //
-      "cte_encoder_write_ixdata_uint32",
-      "cte_encoder_write_ixdata_int64",
-      //
-      "cte_encoder_write_ixdata_uint64",
-      "cte_encoder_write_ixdata_float32",
-      //
-      "cte_encoder_write_ixdata_float64",
-      "cte_encoder_write_ixdata_boolean",
-      //
-      "cte_encoder_begin_command_data"
-      //
-    ];
-    const { instance } = await WebAssembly.instantiate(encoder_mvp_default, importObject);
-    const memory = new DataView(instance.exports.memory.buffer);
-    for (const exportName of requiredExports) {
-      if (!(exportName in instance.exports)) {
-        throw new Error(`WASM Encoder module instance is missing required export: ${exportName}`);
-      }
+      return res;
+    },
+    decode: (a) => {
+      ensureBytes2(a, bytesLen);
+      const r = [];
+      for (let i = 0; i < a.length; i += c.bytesLen)
+        r.push(c.decode(a.subarray(i, i + c.bytesLen)));
+      return r;
     }
-    const handle = instance.exports.cte_encoder_init(capacity);
-    if (!handle) {
-      throw new Error("Failed to create CTE encoder handle in WASM");
-    }
-    return new _CteEncoder(instance, memory, handle);
+  };
+}
+function cleanBytes(...list) {
+  for (const t of list) {
+    if (Array.isArray(t))
+      for (const b of t)
+        b.fill(0);
+    else
+      t.fill(0);
   }
-  /**
-   * @private
-   * @description Refreshes the internal DataView reference to this instance's WASM memory buffer.
-   */
-  #refreshMemoryView() {
-    if (this.#wasmMemory.buffer !== this.#wasmInstance.exports.memory.buffer) {
-      this.#wasmMemory = new DataView(this.#wasmInstance.exports.memory.buffer);
-    }
-  }
-  /**
-   * @description Resets the encoder state for this instance, allowing reuse of its allocated buffer.
-   * @returns {this} The encoder instance for chaining.
-   * @throws {Error} If the encoder instance handle is invalid (e.g., after destroy).
-   */
-  reset() {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid (destroyed?).");
-    this.#wasmExports.cte_encoder_reset(this.#encoderHandle);
-    this.#refreshMemoryView();
-    return this;
-  }
-  /**
-   * @description Retrieves the currently encoded data from this instance as a byte array.
-   * Returns a copy. Terminates an encoding chain.
-   * @returns {Uint8Array} A copy of the encoded data bytes.
-   * @throws {Error} If the encoder instance handle is invalid or WASM memory access fails.
-   */
-  getEncodedData() {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid (destroyed?).");
-    const dataPtr = this.#wasmExports.cte_encoder_get_data(this.#encoderHandle);
-    const size = this.#wasmExports.cte_encoder_get_size(this.#encoderHandle);
-    if (!dataPtr && size > 0) {
-      throw new Error("WASM get_data returned null pointer but size > 0.");
-    }
-    if (size === 0) {
-      return new Uint8Array(0);
-    }
-    this.#refreshMemoryView();
-    if (dataPtr + size > this.#wasmMemory.buffer.byteLength) {
-      throw new Error(`WASM memory access error reading encoded data`);
-    }
-    return new Uint8Array(this.#wasmMemory.buffer.slice(dataPtr, dataPtr + size));
-  }
-  // --- Size Helpers ---
-  /**
-   * Gets the expected size in bytes for a signature/hash item based on crypto type code,
-   * using this instance's WASM module.
-   * @param {number} typeCode - The crypto type code (e.g., `CTE.CTE_CRYPTO_TYPE_ED25519`).
-   * @returns {number} The size in bytes.
-   * @throws {Error} If the encoder instance handle is invalid or the WASM function returns an invalid size.
-   */
-  getSignatureItemSize(typeCode) {
-    if (!this.#encoderHandle) throw new Error("Encoder not initialized or destroyed.");
-    const size = this.#wasmExports.get_signature_item_size(typeCode);
-    if (size <= 0) throw new Error(`WASM get_signature_item_size invalid size (${size}) for type ${typeCode}`);
-    return size;
-  }
-  /**
-   * Gets the expected size in bytes for a public key item based on crypto type code,
-   * using this instance's WASM module.
-   * @param {number} typeCode - The crypto type code (e.g., `CTE.CTE_CRYPTO_TYPE_ED25519`).
-   * @returns {number} The size in bytes.
-   * @throws {Error} If the encoder instance handle is invalid or the WASM function returns an invalid size.
-   */
-  getPublicKeySize(typeCode) {
-    if (!this.#encoderHandle) throw new Error("Encoder not initialized or destroyed.");
-    const size = this.#wasmExports.get_public_key_size(typeCode);
-    if (size <= 0) throw new Error(`WASM get_public_key_size invalid size (${size}) for type ${typeCode}`);
-    return size;
-  }
-  // --- Encoding Methods (Implementations use this.#wasmExports etc.) ---
-  /** @private */
-  #beginAndWriteListData(beginFuncName, items, typeCode, getWasmItemSizeFunc, listName) {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid.");
-    if (!Array.isArray(items) || items.length < 1 || items.length > CTE_LIST_MAX_LEN) {
-      throw new Error(`Invalid ${listName} list size`);
-    }
-    const itemCount = items.length;
-    const itemSize = this.#wasmExports[getWasmItemSizeFunc](typeCode);
-    if (itemSize <= 0) {
-      throw new Error(`Invalid ${listName} item size ${itemSize}`);
-    }
-    const expectedTotalItemSize = itemCount * itemSize;
-    const writePtr = this.#wasmExports[beginFuncName](this.#encoderHandle, itemCount, typeCode);
-    if (!writePtr) {
-      throw new Error(`Begin ${listName} list failed in WASM`);
-    }
-    this.#refreshMemoryView();
-    if (writePtr + expectedTotalItemSize > this.#wasmMemory.buffer.byteLength) {
-      throw new Error(`WASM overflow preparing ${listName}`);
-    }
-    const memoryBytesView = new Uint8Array(this.#wasmMemory.buffer);
-    let currentOffset = writePtr;
-    for (const item of items) {
-      if (!(item instanceof Uint8Array) || item.length !== itemSize) {
-        throw new Error(`Invalid ${listName} item: Expected Uint8Array size ${itemSize}.`);
-      }
-      memoryBytesView.set(item, currentOffset);
-      currentOffset += itemSize;
-    }
-    return this;
-  }
-  /** @returns {this} */
-  addPublicKeyList(keys, typeCode) {
-    return this.#beginAndWriteListData(
-      "cte_encoder_begin_public_key_list",
-      keys,
-      typeCode,
-      "get_public_key_size",
-      "PublicKey"
-    );
-  }
-  //
-  /** @returns {this} */
-  addSignatureList(signatures, typeCode) {
-    return this.#beginAndWriteListData(
-      "cte_encoder_begin_signature_list",
-      signatures,
-      typeCode,
-      "get_signature_item_size",
-      "Signature"
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataIndexReference(index) {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid.");
-    if (typeof index !== "number" || index < 0 || index > CTE_LEGACY_INDEX_MAX_VALUE || !Number.isInteger(index)) {
-      throw new Error(`Invalid legacy index`);
-    }
-    this.#wasmExports.cte_encoder_write_ixdata_index_reference(this.#encoderHandle, index);
-    return this;
-  }
-  /** @private @returns {this} */
-  #writeSimpleIxData(fn, v, t, c = null) {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid.");
-    if (c && !c(v)) {
-      throw new Error(`Invalid IxData ${t}: Val ${v}`);
-    }
-    this.#wasmExports[fn](this.#encoderHandle, v);
-    return this;
-  }
-  //
-  /** @returns {this} */
-  addIxDataUleb128(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_uleb128",
-      BigInt(v),
-      "ULEB128",
-      (x) => typeof x === "bigint" && x >= 0n
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataSleb128(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_sleb128",
-      BigInt(v),
-      "SLEB128",
-      (x) => typeof x === "bigint"
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataInt8(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_int8",
-      v,
-      "Int8",
-      (x) => Number.isInteger(x) && x >= -128 && x <= 127
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataUint8(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_uint8",
-      v,
-      "Uint8",
-      (x) => Number.isInteger(x) && x >= 0 && x <= 255
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataInt16(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_int16",
-      v,
-      "Int16",
-      (x) => Number.isInteger(x) && x >= -32768 && x <= 32767
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataUint16(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_uint16",
-      v,
-      "Uint16",
-      (x) => Number.isInteger(x) && x >= 0 && x <= 65535
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataInt32(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_int32",
-      v,
-      "Int32",
-      (x) => Number.isInteger(x) && x >= -(2 ** 31) && x <= 2 ** 31 - 1
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataUint32(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_uint32",
-      v,
-      "Uint32",
-      (x) => Number.isInteger(x) && x >= 0 && x <= 2 ** 32 - 1
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataInt64(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_int64",
-      BigInt(v),
-      "Int64",
-      (x) => typeof x === "bigint"
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataUint64(v) {
-    return this.#writeSimpleIxData(
-      "cte_encoder_write_ixdata_uint64",
-      BigInt(v),
-      "Uint64",
-      (x) => typeof x === "bigint" && x >= 0n
-    );
-  }
-  //
-  /** @returns {this} */
-  addIxDataFloat32(v) {
-    return this.#writeSimpleIxData("cte_encoder_write_ixdata_float32", v, "Float32", (x) => typeof x === "number");
-  }
-  //
-  /** @returns {this} */
-  addIxDataFloat64(v) {
-    return this.#writeSimpleIxData("cte_encoder_write_ixdata_float64", v, "Float64", (x) => typeof x === "number");
-  }
-  //
-  /** @returns {this} */
-  addIxDataBoolean(v) {
-    return this.#writeSimpleIxData("cte_encoder_write_ixdata_boolean", !!v, "Boolean");
-  }
-  //
-  /**
-   * Adds a Command Data field. Requires input as `Uint8Array`.
-   * @param {Uint8Array} data - The command payload bytes. Length must not exceed `CTE.CTE_COMMAND_EXTENDED_MAX_LEN`.
-   * @returns {this} The encoder instance for chaining.
-   * @throws {Error} If data is not a `Uint8Array` or exceeds max length, or WASM fails.
-   */
-  addCommandData(data) {
-    if (!this.#encoderHandle) throw new Error("Encoder handle invalid.");
-    if (!(data instanceof Uint8Array)) {
-      throw new Error("Command data must be a Uint8Array.");
-    }
-    const bytes = data;
-    const len = bytes.length;
-    if (len > CTE_COMMAND_EXTENDED_MAX_LEN) {
-      throw new Error(`Cmd data too long: ${len} > ${CTE_COMMAND_EXTENDED_MAX_LEN}`);
-    }
-    const ptr = this.#wasmExports.cte_encoder_begin_command_data(this.#encoderHandle, len);
-    if (!ptr) {
-      throw new Error(`Begin command data failed`);
-    }
-    this.#refreshMemoryView();
-    if (ptr + len > this.#wasmMemory.buffer.byteLength) {
-      throw new Error(`WASM overflow for Command Data`);
-    }
-    new Uint8Array(this.#wasmMemory.buffer).set(bytes, ptr);
-    return this;
-  }
-  /**
-   * @description Cleans up Javascript references associated with this encoder instance.
-   * Does not explicitly free WASM memory. Future calls to this instance will fail.
-   */
-  destroy() {
-    this.#encoderHandle = 0;
-    this.#wasmExports = null;
-    this.#wasmInstance = null;
-    this.#wasmMemory = null;
+}
+function getMask(bits) {
+  return (1 << bits) - 1;
+}
+var EMPTY = new Uint8Array(0);
+function getMessage(msg, ctx = EMPTY) {
+  ensureBytes2(msg);
+  ensureBytes2(ctx);
+  if (ctx.length > 255)
+    throw new Error("context should be less than 255 bytes");
+  return concatBytes(new Uint8Array([0, ctx.length]), ctx, msg);
+}
+var HASHES = {
+  "SHA2-256": { oid: hexToBytes("0609608648016503040201"), hash: sha256 },
+  "SHA2-384": { oid: hexToBytes("0609608648016503040202"), hash: sha384 },
+  "SHA2-512": { oid: hexToBytes("0609608648016503040203"), hash: sha512 },
+  "SHA2-224": { oid: hexToBytes("0609608648016503040204"), hash: sha224 },
+  "SHA2-512/224": { oid: hexToBytes("0609608648016503040205"), hash: sha512_224 },
+  "SHA2-512/256": { oid: hexToBytes("0609608648016503040206"), hash: sha512_256 },
+  "SHA3-224": { oid: hexToBytes("0609608648016503040207"), hash: sha3_224 },
+  "SHA3-256": { oid: hexToBytes("0609608648016503040208"), hash: sha3_256 },
+  "SHA3-384": { oid: hexToBytes("0609608648016503040209"), hash: sha3_384 },
+  "SHA3-512": { oid: hexToBytes("060960864801650304020A"), hash: sha3_512 },
+  "SHAKE-128": {
+    oid: hexToBytes("060960864801650304020B"),
+    hash: (msg) => shake128(msg, { dkLen: 32 })
+  },
+  "SHAKE-256": {
+    oid: hexToBytes("060960864801650304020C"),
+    hash: (msg) => shake256(msg, { dkLen: 64 })
   }
 };
-var decoder_mvp_default = __toBinary("AGFzbQEAAAABLQhgAX8Bf2ACf38Bf2ABfwF9YAR/f39/AGABfwF8YAF/AX5gAX8AYAN/f38BfwMiIQAAAAAAAQAAAAAAAAABAgMEAAAABQAFAAAFAAUAAAYHAAQFAXABAQEFAwEAAgYIAX8BQbCIBgsHqAceBm1lbW9yeQIAE2dldF9wdWJsaWNfa2V5X3NpemUAABdnZXRfc2lnbmF0dXJlX2l0ZW1fc2l6ZQABEGN0ZV9kZWNvZGVyX2luaXQAAgZtYWxsb2MAIBBjdGVfZGVjb2Rlcl9sb2FkAAMRY3RlX2RlY29kZXJfcmVzZXQAHhRjdGVfZGVjb2Rlcl9wZWVrX3RhZwAKJmN0ZV9kZWNvZGVyX3BlZWtfcHVibGljX2tleV9saXN0X2NvdW50AAYlY3RlX2RlY29kZXJfcGVla19wdWJsaWNfa2V5X2xpc3RfdHlwZQAHJWN0ZV9kZWNvZGVyX3JlYWRfcHVibGljX2tleV9saXN0X2RhdGEAHCVjdGVfZGVjb2Rlcl9wZWVrX3NpZ25hdHVyZV9saXN0X2NvdW50AAgkY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF90eXBlAAkkY3RlX2RlY29kZXJfcmVhZF9zaWduYXR1cmVfbGlzdF9kYXRhAB0nY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW5kZXhfcmVmZXJlbmNlABEfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWxlYjEyOAAbH2N0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX3NsZWIxMjgAFhxjdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQ4ABUdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW50MTYAEh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQzMgATHWN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX2ludDY0ABQdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWludDgAGh5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MTYAFx5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MzIAGB5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50NjQAGR9jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9mbG9h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IQIgACAEaiEEA0AgBCACLQAAOgAAIAJBAWohAiAEQQFqIQQgA0F/aiIDDQALCyAACzoBAn9BACEBAkBBACgCoIiAgAAiAiAAaiIAQYCAAksNAEEAIAA2AqCIgIAAIAJBsIiAgABqIQELIAELCycBAEGACAsgIAAAACAAAAAwAAAAQAAAAEAAAAAgAAAAIAAAACAAAAAA+AcEbmFtZQHQByEAE2dldF9wdWJsaWNfa2V5X3NpemUBF2dldF9zaWduYXR1cmVfaXRlbV9zaXplAhBjdGVfZGVjb2Rlcl9pbml0AxBjdGVfZGVjb2Rlcl9sb2FkBCRjdGVfZGVjb2Rlcl9wZWVrX2NvbW1hbmRfZGF0YV9sZW5ndGgFGl9wYXJzZV9jb21tYW5kX2RhdGFfaGVhZGVyBiZjdGVfZGVjb2Rlcl9wZWVrX3B1YmxpY19rZXlfbGlzdF9jb3VudAclY3RlX2RlY29kZXJfcGVla19wdWJsaWNfa2V5X2xpc3RfdHlwZQglY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF9jb3VudAkkY3RlX2RlY29kZXJfcGVla19zaWduYXR1cmVfbGlzdF90eXBlChRjdGVfZGVjb2Rlcl9wZWVrX3RhZwslY3RlX2RlY29kZXJfcmVhZF9jb21tYW5kX2RhdGFfcGF5bG9hZAwfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfYm9vbGVhbg0WX2NvbnN1bWVfaXhkYXRhX2hlYWRlcg4fY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfZmxvYXQzMg8QX3JlYWRfZml4ZWRfZGF0YRAfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfZmxvYXQ2NBEnY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW5kZXhfcmVmZXJlbmNlEh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQxNhMdY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfaW50MzIUHWN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX2ludDY0FRxjdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9pbnQ4Fh9jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV9zbGViMTI4Fx5jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50MTYYHmN0ZV9kZWNvZGVyX3JlYWRfaXhkYXRhX3VpbnQzMhkeY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWludDY0Gh1jdGVfZGVjb2Rlcl9yZWFkX2l4ZGF0YV91aW50OBsfY3RlX2RlY29kZXJfcmVhZF9peGRhdGFfdWxlYjEyOBwlY3RlX2RlY29kZXJfcmVhZF9wdWJsaWNfa2V5X2xpc3RfZGF0YR0kY3RlX2RlY29kZXJfcmVhZF9zaWduYXR1cmVfbGlzdF9kYXRhHhFjdGVfZGVjb2Rlcl9yZXNldB8GbWVtY3B5IAZtYWxsb2MHEgEAD19fc3RhY2tfcG9pbnRlcgkKAQAHLnJvZGF0YQAtCXByb2R1Y2VycwEMcHJvY2Vzc2VkLWJ5AQxEZWJpYW4gY2xhbmcGMTQuMC42");
-var CteDecoder = class _CteDecoder {
-  #wasmInstance = null;
-  #wasmMemory = null;
-  #wasmExports = null;
-  #decoderHandle = 0;
-  // Pointer to C struct cte_decoder_t*
-  #isDestroyed = false;
-  /**
-   * @private
-   * @description Internal constructor. Use static `CteDecoder.create()` method instead.
-   * @param {WebAssembly.Instance} wasmInstance - The instantiated decoder WASM module for this object.
-   * @param {DataView} wasmMemory - A DataView for this instance's WASM memory.
-   * @param {number} decoderHandle - The pointer (handle) to the C decoder context (`cte_decoder_t*`).
-   */
-  constructor(wasmInstance, wasmMemory, decoderHandle) {
-    this.#wasmInstance = wasmInstance;
-    this.#wasmMemory = wasmMemory;
-    this.#wasmExports = wasmInstance.exports;
-    this.#decoderHandle = decoderHandle;
-  }
-  /**
-   * @static
-   * @async
-   * @description Asynchronously creates and initializes a new, independent CTE decoder instance with the provided data buffer.
-   * Loads and instantiates a fresh copy of the decoder WASM module and copies the input buffer into its memory.
-   * @param {Uint8Array} cteBuffer - The buffer containing the CTE encoded data. Size must not exceed `CTE.CTE_MAX_TRANSACTION_SIZE`.
-   * @returns {Promise<CteDecoder>} A promise that resolves to the initialized CteDecoder instance.
-   * @throws {Error} If input is invalid, WASM binary/instantiation fails, exports are missing, buffer size is exceeded, or C-level decoder initialization fails.
-   * @example
-   * import { CteDecoder } from '@leachain/ctejs-core'; // Use package name
-   *
-   * async function main(encodedBytes) {
-   * try {
-   * const decoder = await CteDecoder.create(encodedBytes);
-   * console.log('Decoder ready!');
-   * // Proceed with decoding...
-   * } catch (err) {
-   * console.error("Failed to create decoder:", err);
-   * }
-   * }
-   */
-  static async create(cteBuffer) {
-    if (!(cteBuffer instanceof Uint8Array)) {
-      throw new Error("Input must be Uint8Array.");
-    }
-    if (cteBuffer.length === 0) {
-      console.warn("Input buffer empty. WASM might abort.");
-    }
-    if (cteBuffer.length > CTE_MAX_TRANSACTION_SIZE) {
-      throw new Error(`Input buffer size ${cteBuffer.length} exceeds max ${CTE_MAX_TRANSACTION_SIZE}`);
-    }
-    const importObject = {
-      env: {
-        abort: () => {
-          throw new Error(`WASM Decoder aborted`);
-        }
-      }
-    };
-    const requiredExports = [
-      "memory",
-      "get_public_key_size",
-      "get_signature_item_size",
-      //
-      "cte_decoder_init",
-      "cte_decoder_load",
-      "cte_decoder_reset",
-      "cte_decoder_peek_tag",
-      //
-      "cte_decoder_peek_public_key_list_count",
-      "cte_decoder_peek_public_key_list_type",
-      //
-      "cte_decoder_read_public_key_list_data",
-      "cte_decoder_peek_signature_list_count",
-      //
-      "cte_decoder_peek_signature_list_type",
-      "cte_decoder_read_signature_list_data",
-      //
-      "cte_decoder_read_ixdata_index_reference",
-      "cte_decoder_read_ixdata_uleb128",
-      //
-      "cte_decoder_read_ixdata_sleb128",
-      "cte_decoder_read_ixdata_int8",
-      //
-      "cte_decoder_read_ixdata_uint8",
-      "cte_decoder_read_ixdata_int16",
-      //
-      "cte_decoder_read_ixdata_uint16",
-      "cte_decoder_read_ixdata_int32",
-      //
-      "cte_decoder_read_ixdata_uint32",
-      "cte_decoder_read_ixdata_int64",
-      //
-      "cte_decoder_read_ixdata_uint64",
-      "cte_decoder_read_ixdata_float32",
-      //
-      "cte_decoder_read_ixdata_float64",
-      "cte_decoder_read_ixdata_boolean",
-      //
-      "cte_decoder_peek_command_data_length",
-      "cte_decoder_read_command_data_payload"
-      //
-    ];
-    const { instance } = await WebAssembly.instantiate(decoder_mvp_default, importObject);
-    const memory = new DataView(instance.exports.memory.buffer);
-    for (const exportName of requiredExports) {
-      if (!(exportName in instance.exports)) {
-        throw new Error(`WASM Decoder module instance is missing required export: ${exportName}`);
-      }
-    }
-    const bufferLen = cteBuffer.length;
-    const handle = instance.exports.cte_decoder_init(bufferLen);
-    if (!handle) {
-      throw new Error("Failed to create decoder handle in WASM");
-    }
-    const loadPtr = instance.exports.cte_decoder_load(handle);
-    if (!loadPtr) {
-      throw new Error("Failed to get load pointer from WASM decoder");
-    }
-    const currentMemoryForInstance = new DataView(instance.exports.memory.buffer);
-    if (loadPtr + bufferLen > currentMemoryForInstance.buffer.byteLength) {
-      throw new Error(`WASM memory overflow loading data into decoder instance`);
-    }
-    new Uint8Array(currentMemoryForInstance.buffer).set(cteBuffer, loadPtr);
-    return new _CteDecoder(instance, memory, handle);
-  }
-  /** @private */
-  #checkDestroyed() {
-    if (this.#isDestroyed || !this.#decoderHandle) {
-      throw new Error("Decoder instance destroyed or handle invalid.");
-    }
-  }
-  /** @private */
-  #refreshMemoryView() {
-    if (this.#wasmMemory.buffer !== this.#wasmInstance.exports.memory.buffer) {
-      this.#wasmMemory = new DataView(this.#wasmInstance.exports.memory.buffer);
-    }
-  }
-  /**
-   * @description Resets the decoder's read position to the beginning of the loaded buffer for this instance.
-   * @throws {Error} If the decoder instance has been destroyed.
-   */
-  reset() {
-    this.#checkDestroyed();
-    this.#wasmExports.cte_decoder_reset(this.#decoderHandle);
-    this.#refreshMemoryView();
-  }
-  //
-  /**
-   * @description Peeks at the tag (first byte, masked) of the next field in this instance's buffer.
-   * @returns {number | null} The tag value (e.g., `CTE.CTE_TAG_PUBLIC_KEY_LIST`) or `null` if at EOF/error.
-   * @throws {Error} If the decoder instance has been destroyed.
-   */
-  peekTag() {
-    this.#checkDestroyed();
-    const t = this.#wasmExports.cte_decoder_peek_tag(this.#decoderHandle);
-    return t < 0 ? null : t;
-  }
-  //
-  /**
-   * @description Peeks at the header of a Public Key List field in this instance's buffer.
-   * @returns {{count: number, typeCode: number} | null} Key count and type code, or `null`.
-   * @throws {Error} If the decoder instance has been destroyed.
-   */
-  peekPublicKeyListInfo() {
-    this.#checkDestroyed();
-    if (this.peekTag() !== CTE_TAG_PUBLIC_KEY_LIST) return null;
-    const c = this.#wasmExports.cte_decoder_peek_public_key_list_count(this.#decoderHandle);
-    const t = this.#wasmExports.cte_decoder_peek_public_key_list_type(this.#decoderHandle);
-    return c === CTE_PEEK_EOF || t === CTE_PEEK_EOF ? null : { count: c, typeCode: t };
-  }
-  //
-  /**
-   * @description Reads and consumes a Public Key List field from this instance's buffer.
-   * @returns {Uint8Array | null} A copy of the key data, or `null`.
-   * @throws {Error} If read fails, instance destroyed, or memory access fails.
-   */
-  readPublicKeyListData() {
-    this.#checkDestroyed();
-    const i = this.peekPublicKeyListInfo();
-    if (!i) return null;
-    const sz = this.#wasmExports.get_public_key_size(i.typeCode);
-    if (sz <= 0) throw new Error(`Invalid PK size ${sz}`);
-    const totSz = i.count * sz;
-    const ptr = this.#wasmExports.cte_decoder_read_public_key_list_data(this.#decoderHandle);
-    if (!ptr) throw new Error("Read PK fail");
-    this.#refreshMemoryView();
-    if (ptr + totSz > this.#wasmMemory.buffer.byteLength) throw new Error(`PK read overflow`);
-    return new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + totSz));
-  }
-  /**
-   * @description Peeks at the header of a Signature List field in this instance's buffer.
-   * @returns {{count: number, typeCode: number} | null} Item count and type code, or `null`.
-   * @throws {Error} If the decoder instance has been destroyed.
-   */
-  peekSignatureListInfo() {
-    this.#checkDestroyed();
-    if (this.peekTag() !== CTE_TAG_SIGNATURE_LIST) return null;
-    const c = this.#wasmExports.cte_decoder_peek_signature_list_count(this.#decoderHandle);
-    const t = this.#wasmExports.cte_decoder_peek_signature_list_type(this.#decoderHandle);
-    return c === CTE_PEEK_EOF || t === CTE_PEEK_EOF ? null : { count: c, typeCode: t };
-  }
-  //
-  /**
-   * @description Reads and consumes a Signature List field from this instance's buffer.
-   * @returns {Uint8Array | null} A copy of the signature/hash data, or `null`.
-   * @throws {Error} If read fails, instance destroyed, or memory access fails.
-   */
-  readSignatureListData() {
-    this.#checkDestroyed();
-    const i = this.peekSignatureListInfo();
-    if (!i) return null;
-    const sz = this.#wasmExports.get_signature_item_size(i.typeCode);
-    if (sz <= 0) throw new Error(`Invalid Sig size ${sz}`);
-    const totSz = i.count * sz;
-    const ptr = this.#wasmExports.cte_decoder_read_signature_list_data(this.#decoderHandle);
-    if (!ptr) throw new Error("Read Sig fail");
-    this.#refreshMemoryView();
-    if (ptr + totSz > this.#wasmMemory.buffer.byteLength) throw new Error(`Sig read overflow`);
-    return new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + totSz));
-  }
-  /** @private */
-  #readSimpleIxData(fn) {
-    this.#checkDestroyed();
-    if (this.peekTag() !== CTE_TAG_IXDATA_FIELD) throw new Error("Expected IxData");
-    return this.#wasmExports[fn](this.#decoderHandle);
-  }
-  //
-  /** Reads IxData: Legacy Index Reference (0-15). @returns {number} */
-  readIxDataIndexReference() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_index_reference");
-  }
-  //
-  /** Reads IxData: ULEB128 encoded value. @returns {bigint} */
-  readIxDataUleb128() {
-    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_uleb128"));
-  }
-  //
-  /** Reads IxData: SLEB128 encoded value. @returns {bigint} */
-  readIxDataSleb128() {
-    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_sleb128"));
-  }
-  //
-  /** Reads IxData: Fixed int8. @returns {number} */
-  readIxDataInt8() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_int8");
-  }
-  //
-  /** Reads IxData: Fixed uint8. @returns {number} */
-  readIxDataUint8() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint8");
-  }
-  //
-  /** Reads IxData: Fixed int16. @returns {number} */
-  readIxDataInt16() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_int16");
-  }
-  //
-  /** Reads IxData: Fixed uint16. @returns {number} */
-  readIxDataUint16() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint16");
-  }
-  //
-  /** Reads IxData: Fixed int32. @returns {number} */
-  readIxDataInt32() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_int32");
-  }
-  //
-  /** Reads IxData: Fixed uint32. @returns {number} */
-  readIxDataUint32() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_uint32");
-  }
-  //
-  /** Reads IxData: Fixed int64. @returns {bigint} */
-  readIxDataInt64() {
-    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_int64"));
-  }
-  //
-  /** Reads IxData: Fixed uint64. @returns {bigint} */
-  readIxDataUint64() {
-    return BigInt(this.#readSimpleIxData("cte_decoder_read_ixdata_uint64"));
-  }
-  //
-  /** Reads IxData: Fixed float32. @returns {number} */
-  readIxDataFloat32() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_float32");
-  }
-  //
-  /** Reads IxData: Fixed float64. @returns {number} */
-  readIxDataFloat64() {
-    return this.#readSimpleIxData("cte_decoder_read_ixdata_float64");
-  }
-  //
-  /** Reads IxData: Boolean constant. @returns {boolean} */
-  readIxDataBoolean() {
-    return !!this.#readSimpleIxData("cte_decoder_read_ixdata_boolean");
-  }
-  //
-  /**
-   * @description Peeks at the header of Command Data in this instance's buffer.
-   * @returns {number | null} The payload length, or `null`.
-   * @throws {Error} If the decoder instance has been destroyed.
-   */
-  peekCommandDataLength() {
-    this.#checkDestroyed();
-    if (this.peekTag() !== CTE_TAG_COMMAND_DATA) return null;
-    const l = this.#wasmExports.cte_decoder_peek_command_data_length(this.#decoderHandle);
-    return l < 0 || l > CTE_COMMAND_EXTENDED_MAX_LEN ? null : l;
-  }
-  //
-  /**
-   * @description Reads and consumes a Command Data field payload from this instance's buffer.
-   * @returns {{data: Uint8Array} | null} An object containing the payload bytes as `data`, or `null`.
-   * @throws {Error} If read fails, instance destroyed, or memory access fails.
-   */
-  readCommandDataPayload() {
-    this.#checkDestroyed();
-    const len = this.peekCommandDataLength();
-    if (len === null || len < 0) return null;
-    const ptr = this.#wasmExports.cte_decoder_read_command_data_payload(this.#decoderHandle);
-    if (!ptr && len > 0) throw new Error("Read Cmd payload failed");
-    let data = new Uint8Array(0);
-    if (len > 0) {
-      this.#refreshMemoryView();
-      if (ptr + len > this.#wasmMemory.buffer.byteLength) throw new Error(`Cmd read overflow`);
-      data = new Uint8Array(this.#wasmMemory.buffer.slice(ptr, ptr + len));
-    }
-    return { data };
-  }
-  /**
-   * @description Cleans up Javascript references associated with this decoder instance.
-   * Does not explicitly free WASM memory. Future calls to this instance will fail.
-   */
-  destroy() {
-    this.#decoderHandle = 0;
-    this.#wasmExports = null;
-    this.#wasmInstance = null;
-    this.#wasmMemory = null;
-    this.#isDestroyed = true;
-  }
-};
-var CTE_MAX_TRANSACTION_SIZE = 1232;
-var CTE_TAG_PUBLIC_KEY_LIST = 0;
-var CTE_TAG_SIGNATURE_LIST = 64;
-var CTE_TAG_IXDATA_FIELD = 128;
-var CTE_TAG_COMMAND_DATA = 192;
-var CTE_CRYPTO_TYPE_ED25519 = 0;
-var CTE_LIST_MAX_LEN = 15;
-var CTE_PUBKEY_SIZE_ED25519 = 32;
-var CTE_LEGACY_INDEX_MAX_VALUE = 15;
-var CTE_COMMAND_EXTENDED_MAX_LEN = 1197;
-var CTE_PEEK_EOF = 255;
+function getMessagePrehash(hashName, msg, ctx = EMPTY) {
+  ensureBytes2(msg);
+  ensureBytes2(ctx);
+  if (ctx.length > 255)
+    throw new Error("context should be less than 255 bytes");
+  if (!HASHES[hashName])
+    throw new Error("unknown hash: " + hashName);
+  const { oid, hash } = HASHES[hashName];
+  const hashed = hash(msg);
+  return concatBytes(new Uint8Array([1, ctx.length]), ctx, oid, hashed);
+}
 
-// src/system-program.js
-var TransferInstruction = class {
-  #programIndex = null;
-  constructor({ fromPubkey, toPubkey, amount }) {
-    this.fromPubkey = fromPubkey;
-    this.toPubkey = toPubkey;
-    this.amount = amount;
-    this.fromPubkeyIndex = null;
-    this.toPubkeyIndex = null;
-  }
-  resolveKeys(keyList) {
-    this.#programIndex = keyList.add(LEA_SYSTEM_PROGRAM);
-    this.fromPubkeyIndex = keyList.add(this.fromPubkey);
-    this.toPubkeyIndex = keyList.add(this.toPubkey);
-  }
-  get programIndex() {
-    return this.#programIndex;
-  }
-  async toBytes() {
-    if (this.fromPubkeyIndex === null || this.toPubkeyIndex === null) {
-      throw new Error("resolveKeys() must be called before toBytes()");
+// node_modules/@noble/post-quantum/esm/slh-dsa.js
+var PARAMS = {
+  "128f": { W: 16, N: 16, H: 66, D: 22, K: 33, A: 6 },
+  "128s": { W: 16, N: 16, H: 63, D: 7, K: 14, A: 12 },
+  "192f": { W: 16, N: 24, H: 66, D: 22, K: 33, A: 8 },
+  "192s": { W: 16, N: 24, H: 63, D: 7, K: 17, A: 14 },
+  "256f": { W: 16, N: 32, H: 68, D: 17, K: 35, A: 9 },
+  "256s": { W: 16, N: 32, H: 64, D: 8, K: 22, A: 14 }
+};
+var AddressType = {
+  WOTS: 0,
+  WOTSPK: 1,
+  HASHTREE: 2,
+  FORSTREE: 3,
+  FORSPK: 4,
+  WOTSPRF: 5,
+  FORSPRF: 6
+};
+function hexToNumber(hex) {
+  if (typeof hex !== "string")
+    throw new Error("hex string expected, got " + typeof hex);
+  return BigInt(hex === "" ? "0" : "0x" + hex);
+}
+function bytesToNumberBE2(bytes) {
+  return hexToNumber(bytesToHex(bytes));
+}
+function numberToBytesBE2(n, len) {
+  return hexToBytes(n.toString(16).padStart(len * 2, "0"));
+}
+var base2b = (outLen, b) => {
+  const mask = getMask(b);
+  return (bytes) => {
+    const baseB = new Uint32Array(outLen);
+    for (let out = 0, pos = 0, bits = 0, total = 0; out < outLen; out++) {
+      while (bits < b) {
+        total = total << 8 | bytes[pos++];
+        bits += 8;
+      }
+      bits -= b;
+      baseB[out] = total >>> bits & mask;
     }
-    const encoder = await CteEncoder.create(2e3);
-    encoder.addIxDataUint8(0);
-    encoder.addIxDataIndexReference(this.fromPubkeyIndex);
-    encoder.addIxDataUleb128(this.amount);
-    encoder.addIxDataIndexReference(this.toPubkeyIndex);
-    return encoder.getEncodedData();
-  }
+    return baseB;
+  };
 };
-var SystemProgram = class {
-  static transfer(obj) {
-    return new TransferInstruction(obj);
+function getMaskBig(bits) {
+  return (1n << BigInt(bits)) - 1n;
+}
+function gen2(opts, hashOpts) {
+  const { N: N2, W: W2, H, D, K, A } = opts;
+  const getContext = hashOpts.getContext(opts);
+  if (W2 !== 16)
+    throw new Error("Unsupported Winternitz parameter");
+  const WOTS_LOGW = 4;
+  const WOTS_LEN1 = Math.floor(8 * N2 / WOTS_LOGW);
+  const WOTS_LEN2 = N2 <= 8 ? 2 : N2 <= 136 ? 3 : 4;
+  const TREE_HEIGHT = Math.floor(H / D);
+  const WOTS_LEN = WOTS_LEN1 + WOTS_LEN2;
+  let ADDR_BYTES = 22;
+  let OFFSET_LAYER = 0;
+  let OFFSET_TREE = 1;
+  let OFFSET_TYPE = 9;
+  let OFFSET_KP_ADDR2 = 12;
+  let OFFSET_KP_ADDR1 = 13;
+  let OFFSET_CHAIN_ADDR = 17;
+  let OFFSET_TREE_INDEX = 18;
+  let OFFSET_HASH_ADDR = 21;
+  if (!hashOpts.isCompressed) {
+    ADDR_BYTES = 32;
+    OFFSET_LAYER += 3;
+    OFFSET_TREE += 7;
+    OFFSET_TYPE += 10;
+    OFFSET_KP_ADDR2 += 10;
+    OFFSET_KP_ADDR1 += 10;
+    OFFSET_CHAIN_ADDR += 10;
+    OFFSET_TREE_INDEX += 10;
+    OFFSET_HASH_ADDR += 10;
   }
+  const setAddr = (opts2, addr = new Uint8Array(ADDR_BYTES)) => {
+    const { type, height, tree, layer, index, chain, hash, keypair } = opts2;
+    const { subtreeAddr, keypairAddr } = opts2;
+    const v = createView(addr);
+    if (height !== void 0)
+      addr[OFFSET_CHAIN_ADDR] = height;
+    if (layer !== void 0)
+      addr[OFFSET_LAYER] = layer;
+    if (type !== void 0)
+      addr[OFFSET_TYPE] = type;
+    if (chain !== void 0)
+      addr[OFFSET_CHAIN_ADDR] = chain;
+    if (hash !== void 0)
+      addr[OFFSET_HASH_ADDR] = hash;
+    if (index !== void 0)
+      v.setUint32(OFFSET_TREE_INDEX, index, false);
+    if (subtreeAddr)
+      addr.set(subtreeAddr.subarray(0, OFFSET_TREE + 8));
+    if (tree !== void 0)
+      setBigUint64(v, OFFSET_TREE, tree, false);
+    if (keypair !== void 0) {
+      addr[OFFSET_KP_ADDR1] = keypair;
+      if (TREE_HEIGHT > 8)
+        addr[OFFSET_KP_ADDR2] = keypair >>> 8;
+    }
+    if (keypairAddr) {
+      addr.set(keypairAddr.subarray(0, OFFSET_TREE + 8));
+      addr[OFFSET_KP_ADDR1] = keypairAddr[OFFSET_KP_ADDR1];
+      if (TREE_HEIGHT > 8)
+        addr[OFFSET_KP_ADDR2] = keypairAddr[OFFSET_KP_ADDR2];
+    }
+    return addr;
+  };
+  const chainCoder = base2b(WOTS_LEN2, WOTS_LOGW);
+  const chainLengths = (msg) => {
+    const W1 = base2b(WOTS_LEN1, WOTS_LOGW)(msg);
+    let csum = 0;
+    for (let i = 0; i < W1.length; i++)
+      csum += W2 - 1 - W1[i];
+    csum <<= (8 - WOTS_LEN2 * WOTS_LOGW % 8) % 8;
+    const W22 = chainCoder(numberToBytesBE2(csum, Math.ceil(WOTS_LEN2 * WOTS_LOGW / 8)));
+    const lengths = new Uint32Array(WOTS_LEN);
+    lengths.set(W1);
+    lengths.set(W22, W1.length);
+    return lengths;
+  };
+  const messageToIndices = base2b(K, A);
+  const TREE_BITS = TREE_HEIGHT * (D - 1);
+  const LEAF_BITS = TREE_HEIGHT;
+  const hashMsgCoder = splitCoder(Math.ceil(A * K / 8), Math.ceil(TREE_BITS / 8), Math.ceil(TREE_HEIGHT / 8));
+  const hashMessage = (R, pkSeed, msg, context) => {
+    const digest = context.Hmsg(R, pkSeed, msg, hashMsgCoder.bytesLen);
+    const [md, tmpIdxTree, tmpIdxLeaf] = hashMsgCoder.decode(digest);
+    const tree = bytesToNumberBE2(tmpIdxTree) & getMaskBig(TREE_BITS);
+    const leafIdx = Number(bytesToNumberBE2(tmpIdxLeaf)) & getMask(LEAF_BITS);
+    return { tree, leafIdx, md };
+  };
+  const treehash = (height, fn) => function treehash_i(context, leafIdx, idxOffset, treeAddr, info) {
+    const maxIdx = (1 << height) - 1;
+    const stack = new Uint8Array(height * N2);
+    const authPath = new Uint8Array(height * N2);
+    for (let idx = 0; ; idx++) {
+      const current = new Uint8Array(2 * N2);
+      const cur0 = current.subarray(0, N2);
+      const cur1 = current.subarray(N2);
+      const addrOffset = idx + idxOffset;
+      cur1.set(fn(leafIdx, addrOffset, context, info));
+      let h = 0;
+      for (let i = idx, o = idxOffset, l = leafIdx; ; h++, i >>>= 1, l >>>= 1, o >>>= 1) {
+        if (h === height)
+          return { root: cur1, authPath };
+        if ((i ^ l) === 1)
+          authPath.subarray(h * N2).set(cur1);
+        if ((i & 1) === 0 && idx < maxIdx)
+          break;
+        setAddr({ height: h + 1, index: (i >> 1) + (o >> 1) }, treeAddr);
+        cur0.set(stack.subarray(h * N2).subarray(0, N2));
+        cur1.set(context.thashN(2, current, treeAddr));
+      }
+      stack.subarray(h * N2).set(cur1);
+    }
+    throw new Error("Unreachable code path reached, report this error");
+  };
+  const wotsTreehash = treehash(TREE_HEIGHT, (leafIdx, addrOffset, context, info) => {
+    const wotsPk = new Uint8Array(WOTS_LEN * N2);
+    const wotsKmask = addrOffset === leafIdx ? 0 : ~0 >>> 0;
+    setAddr({ keypair: addrOffset }, info.leafAddr);
+    setAddr({ keypair: addrOffset }, info.pkAddr);
+    for (let i = 0; i < WOTS_LEN; i++) {
+      const wotsK = info.wotsSteps[i] | wotsKmask;
+      const pk = wotsPk.subarray(i * N2, (i + 1) * N2);
+      setAddr({ chain: i, hash: 0, type: AddressType.WOTSPRF }, info.leafAddr);
+      pk.set(context.PRFaddr(info.leafAddr));
+      setAddr({ type: AddressType.WOTS }, info.leafAddr);
+      for (let k = 0; ; k++) {
+        if (k === wotsK)
+          info.wotsSig.subarray(i * N2).set(pk);
+        if (k === W2 - 1)
+          break;
+        setAddr({ hash: k }, info.leafAddr);
+        pk.set(context.thash1(pk, info.leafAddr));
+      }
+    }
+    return context.thashN(WOTS_LEN, wotsPk, info.pkAddr);
+  });
+  const forsTreehash = treehash(A, (_, addrOffset, context, forsLeafAddr) => {
+    setAddr({ type: AddressType.FORSPRF, index: addrOffset }, forsLeafAddr);
+    const prf = context.PRFaddr(forsLeafAddr);
+    setAddr({ type: AddressType.FORSTREE }, forsLeafAddr);
+    return context.thash1(prf, forsLeafAddr);
+  });
+  const merkleSign = (context, wotsAddr, treeAddr, leafIdx, prevRoot = new Uint8Array(N2)) => {
+    setAddr({ type: AddressType.HASHTREE }, treeAddr);
+    const info = {
+      wotsSig: new Uint8Array(wotsCoder.bytesLen),
+      wotsSteps: chainLengths(prevRoot),
+      leafAddr: setAddr({ subtreeAddr: wotsAddr }),
+      pkAddr: setAddr({ type: AddressType.WOTSPK, subtreeAddr: wotsAddr })
+    };
+    const { root, authPath } = wotsTreehash(context, leafIdx, 0, treeAddr, info);
+    return {
+      root,
+      sigWots: info.wotsSig.subarray(0, WOTS_LEN * N2),
+      sigAuth: authPath
+    };
+  };
+  const computeRoot = (leaf, leafIdx, idxOffset, authPath, treeHeight, context, addr) => {
+    const buffer = new Uint8Array(2 * N2);
+    const b0 = buffer.subarray(0, N2);
+    const b1 = buffer.subarray(N2, 2 * N2);
+    if ((leafIdx & 1) !== 0) {
+      b1.set(leaf.subarray(0, N2));
+      b0.set(authPath.subarray(0, N2));
+    } else {
+      b0.set(leaf.subarray(0, N2));
+      b1.set(authPath.subarray(0, N2));
+    }
+    leafIdx >>>= 1;
+    idxOffset >>>= 1;
+    for (let i = 0; i < treeHeight - 1; i++, leafIdx >>= 1, idxOffset >>= 1) {
+      setAddr({ height: i + 1, index: leafIdx + idxOffset }, addr);
+      const a = authPath.subarray((i + 1) * N2, (i + 2) * N2);
+      if ((leafIdx & 1) !== 0) {
+        b1.set(context.thashN(2, buffer, addr));
+        b0.set(a);
+      } else {
+        buffer.set(context.thashN(2, buffer, addr));
+        b1.set(a);
+      }
+    }
+    setAddr({ height: treeHeight, index: leafIdx + idxOffset }, addr);
+    return context.thashN(2, buffer, addr);
+  };
+  const seedCoder = splitCoder(N2, N2, N2);
+  const publicCoder = splitCoder(N2, N2);
+  const secretCoder = splitCoder(N2, N2, publicCoder.bytesLen);
+  const forsCoder = vecCoder(splitCoder(N2, N2 * A), K);
+  const wotsCoder = vecCoder(splitCoder(WOTS_LEN * N2, TREE_HEIGHT * N2), D);
+  const sigCoder = splitCoder(N2, forsCoder, wotsCoder);
+  const internal = {
+    signRandBytes: N2,
+    keygen(seed) {
+      seed = seed === void 0 ? randomBytes2(seedCoder.bytesLen) : seed.slice();
+      const [secretSeed, secretPRF, publicSeed] = seedCoder.decode(seed);
+      const context = getContext(publicSeed, secretSeed);
+      const topTreeAddr = setAddr({ layer: D - 1 });
+      const wotsAddr = setAddr({ layer: D - 1 });
+      const { root } = merkleSign(context, wotsAddr, topTreeAddr, ~0 >>> 0);
+      const publicKey = publicCoder.encode([publicSeed, root]);
+      const secretKey = secretCoder.encode([secretSeed, secretPRF, publicKey]);
+      context.clean();
+      cleanBytes(secretSeed, secretPRF, root, wotsAddr, topTreeAddr);
+      return { publicKey, secretKey };
+    },
+    sign: (sk, msg, random) => {
+      const [skSeed, skPRF, pk] = secretCoder.decode(sk);
+      const [pkSeed, _] = publicCoder.decode(pk);
+      if (!random)
+        random = pkSeed.slice();
+      ensureBytes2(random, N2);
+      const context = getContext(pkSeed, skSeed);
+      const R = context.PRFmsg(skPRF, random, msg);
+      let { tree, leafIdx, md } = hashMessage(R, pk, msg, context);
+      const wotsAddr = setAddr({
+        type: AddressType.WOTS,
+        tree,
+        keypair: leafIdx
+      });
+      const roots = [];
+      const forsLeaf = setAddr({ keypairAddr: wotsAddr });
+      const forsTreeAddr = setAddr({ keypairAddr: wotsAddr });
+      const indices = messageToIndices(md);
+      const fors = [];
+      for (let i = 0; i < indices.length; i++) {
+        const idxOffset = i << A;
+        setAddr({
+          type: AddressType.FORSPRF,
+          height: 0,
+          index: indices[i] + idxOffset
+        }, forsTreeAddr);
+        const prf = context.PRFaddr(forsTreeAddr);
+        setAddr({ type: AddressType.FORSTREE }, forsTreeAddr);
+        const { root: root2, authPath } = forsTreehash(context, indices[i], idxOffset, forsTreeAddr, forsLeaf);
+        roots.push(root2);
+        fors.push([prf, authPath]);
+      }
+      const forsPkAddr = setAddr({
+        type: AddressType.FORSPK,
+        keypairAddr: wotsAddr
+      });
+      const root = context.thashN(K, concatBytes(...roots), forsPkAddr);
+      const treeAddr = setAddr({ type: AddressType.HASHTREE });
+      const wots = [];
+      for (let i = 0; i < D; i++, tree >>= BigInt(TREE_HEIGHT)) {
+        setAddr({ tree, layer: i }, treeAddr);
+        setAddr({ subtreeAddr: treeAddr, keypair: leafIdx }, wotsAddr);
+        const { sigWots, sigAuth, root: r } = merkleSign(context, wotsAddr, treeAddr, leafIdx, root);
+        root.set(r);
+        r.fill(0);
+        wots.push([sigWots, sigAuth]);
+        leafIdx = Number(tree & getMaskBig(TREE_HEIGHT));
+      }
+      context.clean();
+      const SIG = sigCoder.encode([R, fors, wots]);
+      cleanBytes(R, random, treeAddr, wotsAddr, forsLeaf, forsTreeAddr, indices, roots);
+      return SIG;
+    },
+    verify: (publicKey, msg, sig) => {
+      const [pkSeed, pubRoot] = publicCoder.decode(publicKey);
+      const [random, forsVec, wotsVec] = sigCoder.decode(sig);
+      const pk = publicKey;
+      if (sig.length !== sigCoder.bytesLen)
+        return false;
+      const context = getContext(pkSeed);
+      let { tree, leafIdx, md } = hashMessage(random, pk, msg, context);
+      const wotsAddr = setAddr({
+        type: AddressType.WOTS,
+        tree,
+        keypair: leafIdx
+      });
+      const roots = [];
+      const forsTreeAddr = setAddr({
+        type: AddressType.FORSTREE,
+        keypairAddr: wotsAddr
+      });
+      const indices = messageToIndices(md);
+      for (let i = 0; i < forsVec.length; i++) {
+        const [prf, authPath] = forsVec[i];
+        const idxOffset = i << A;
+        setAddr({ height: 0, index: indices[i] + idxOffset }, forsTreeAddr);
+        const leaf = context.thash1(prf, forsTreeAddr);
+        roots.push(computeRoot(leaf, indices[i], idxOffset, authPath, A, context, forsTreeAddr));
+      }
+      const forsPkAddr = setAddr({
+        type: AddressType.FORSPK,
+        keypairAddr: wotsAddr
+      });
+      let root = context.thashN(K, concatBytes(...roots), forsPkAddr);
+      const treeAddr = setAddr({ type: AddressType.HASHTREE });
+      const wotsPkAddr = setAddr({ type: AddressType.WOTSPK });
+      const wotsPk = new Uint8Array(WOTS_LEN * N2);
+      for (let i = 0; i < wotsVec.length; i++, tree >>= BigInt(TREE_HEIGHT)) {
+        const [wots, sigAuth] = wotsVec[i];
+        setAddr({ tree, layer: i }, treeAddr);
+        setAddr({ subtreeAddr: treeAddr, keypair: leafIdx }, wotsAddr);
+        setAddr({ keypairAddr: wotsAddr }, wotsPkAddr);
+        const lengths = chainLengths(root);
+        for (let i2 = 0; i2 < WOTS_LEN; i2++) {
+          setAddr({ chain: i2 }, wotsAddr);
+          const steps = W2 - 1 - lengths[i2];
+          const start = lengths[i2];
+          const out = wotsPk.subarray(i2 * N2);
+          out.set(wots.subarray(i2 * N2, (i2 + 1) * N2));
+          for (let j = start; j < start + steps && j < W2; j++) {
+            setAddr({ hash: j }, wotsAddr);
+            out.set(context.thash1(out, wotsAddr));
+          }
+        }
+        const leaf = context.thashN(WOTS_LEN, wotsPk, wotsPkAddr);
+        root = computeRoot(leaf, leafIdx, 0, sigAuth, TREE_HEIGHT, context, treeAddr);
+        leafIdx = Number(tree & getMaskBig(TREE_HEIGHT));
+      }
+      return equalBytes(root, pubRoot);
+    }
+  };
+  return {
+    internal,
+    seedLen: seedCoder.bytesLen,
+    keygen: internal.keygen,
+    signRandBytes: internal.signRandBytes,
+    sign: (secretKey, msg, ctx = EMPTY, random) => {
+      const M2 = getMessage(msg, ctx);
+      const res = internal.sign(secretKey, M2, random);
+      M2.fill(0);
+      return res;
+    },
+    verify: (publicKey, msg, sig, ctx = EMPTY) => {
+      return internal.verify(publicKey, getMessage(msg, ctx), sig);
+    },
+    prehash: (hashName) => ({
+      seedLen: seedCoder.bytesLen,
+      keygen: internal.keygen,
+      signRandBytes: internal.signRandBytes,
+      sign: (secretKey, msg, ctx = EMPTY, random) => {
+        const M2 = getMessagePrehash(hashName, msg, ctx);
+        const res = internal.sign(secretKey, M2, random);
+        M2.fill(0);
+        return res;
+      },
+      verify: (publicKey, msg, sig, ctx = EMPTY) => {
+        return internal.verify(publicKey, getMessagePrehash(hashName, msg, ctx), sig);
+      }
+    })
+  };
+}
+var genShake2 = () => (opts) => (pubSeed, skSeed) => {
+  const { N: N2 } = opts;
+  const stats = { prf: 0, thash: 0, hmsg: 0, gen_message_random: 0 };
+  const h0 = shake256.create({}).update(pubSeed);
+  const h0tmp = h0.clone();
+  const thash = (blocks, input, addr) => {
+    stats.thash++;
+    return h0._cloneInto(h0tmp).update(addr).update(input.subarray(0, blocks * N2)).xof(N2);
+  };
+  return {
+    PRFaddr: (addr) => {
+      if (!skSeed)
+        throw new Error("no sk seed");
+      stats.prf++;
+      const res = h0._cloneInto(h0tmp).update(addr).update(skSeed).xof(N2);
+      return res;
+    },
+    PRFmsg: (skPRF, random, msg) => {
+      stats.gen_message_random++;
+      return shake256.create({}).update(skPRF).update(random).update(msg).digest().subarray(0, N2);
+    },
+    Hmsg: (R, pk, m, outLen) => {
+      stats.hmsg++;
+      return shake256.create({}).update(R.subarray(0, N2)).update(pk).update(m).xof(outLen);
+    },
+    thash1: thash.bind(null, 1),
+    thashN: thash,
+    clean: () => {
+      h0.destroy();
+      h0tmp.destroy();
+    }
+  };
 };
+var SHAKE_SIMPLE = { getContext: genShake2() };
+var slh_dsa_shake_128f = /* @__PURE__ */ gen2(PARAMS["128f"], SHAKE_SIMPLE);
+var slh_dsa_shake_128s = /* @__PURE__ */ gen2(PARAMS["128s"], SHAKE_SIMPLE);
+var slh_dsa_shake_192f = /* @__PURE__ */ gen2(PARAMS["192f"], SHAKE_SIMPLE);
+var slh_dsa_shake_192s = /* @__PURE__ */ gen2(PARAMS["192s"], SHAKE_SIMPLE);
+var slh_dsa_shake_256f = /* @__PURE__ */ gen2(PARAMS["256f"], SHAKE_SIMPLE);
+var slh_dsa_shake_256s = /* @__PURE__ */ gen2(PARAMS["256s"], SHAKE_SIMPLE);
+var genSha = (h0, h1) => (opts) => (pub_seed, sk_seed) => {
+  const { N: N2 } = opts;
+  const stats = { prf: 0, thash: 0, hmsg: 0, gen_message_random: 0, mgf1: 0 };
+  const counterB = new Uint8Array(4);
+  const counterV = createView(counterB);
+  const h0ps = h0.create().update(pub_seed).update(new Uint8Array(h0.blockLen - N2));
+  const h1ps = h1.create().update(pub_seed).update(new Uint8Array(h1.blockLen - N2));
+  const h0tmp = h0ps.clone();
+  const h1tmp = h1ps.clone();
+  function mgf1(seed, length, hash) {
+    stats.mgf1++;
+    const out = new Uint8Array(Math.ceil(length / hash.outputLen) * hash.outputLen);
+    if (length > 2 ** 32)
+      throw new Error("mask too long");
+    for (let counter = 0, o = out; o.length; counter++) {
+      counterV.setUint32(0, counter, false);
+      hash.create().update(seed).update(counterB).digestInto(o);
+      o = o.subarray(hash.outputLen);
+    }
+    out.subarray(length).fill(0);
+    return out.subarray(0, length);
+  }
+  const thash = (_, h, hTmp) => (blocks, input, addr) => {
+    stats.thash++;
+    const d = h._cloneInto(hTmp).update(addr).update(input.subarray(0, blocks * N2)).digest();
+    return d.subarray(0, N2);
+  };
+  return {
+    PRFaddr: (addr) => {
+      if (!sk_seed)
+        throw new Error("No sk seed");
+      stats.prf++;
+      const res = h0ps._cloneInto(h0tmp).update(addr).update(sk_seed).digest().subarray(0, N2);
+      return res;
+    },
+    PRFmsg: (skPRF, random, msg) => {
+      stats.gen_message_random++;
+      return new HMAC(h1, skPRF).update(random).update(msg).digest().subarray(0, N2);
+    },
+    Hmsg: (R, pk, m, outLen) => {
+      stats.hmsg++;
+      const seed = concatBytes(R.subarray(0, N2), pk.subarray(0, N2), h1.create().update(R.subarray(0, N2)).update(pk).update(m).digest());
+      return mgf1(seed, outLen, h1);
+    },
+    thash1: thash(h0, h0ps, h0tmp).bind(null, 1),
+    thashN: thash(h1, h1ps, h1tmp),
+    clean: () => {
+      h0ps.destroy();
+      h1ps.destroy();
+      h0tmp.destroy();
+      h1tmp.destroy();
+    }
+  };
+};
+var SHA256_SIMPLE = {
+  isCompressed: true,
+  getContext: genSha(sha256, sha256)
+};
+var SHA512_SIMPLE = {
+  isCompressed: true,
+  getContext: genSha(sha256, sha512)
+};
+var slh_dsa_sha2_128f = /* @__PURE__ */ gen2(PARAMS["128f"], SHA256_SIMPLE);
+var slh_dsa_sha2_128s = /* @__PURE__ */ gen2(PARAMS["128s"], SHA256_SIMPLE);
+var slh_dsa_sha2_192f = /* @__PURE__ */ gen2(PARAMS["192f"], SHA512_SIMPLE);
+var slh_dsa_sha2_192s = /* @__PURE__ */ gen2(PARAMS["192s"], SHA512_SIMPLE);
+var slh_dsa_sha2_256f = /* @__PURE__ */ gen2(PARAMS["256f"], SHA512_SIMPLE);
+var slh_dsa_sha2_256s = /* @__PURE__ */ gen2(PARAMS["256s"], SHA512_SIMPLE);
 
 // src/utils.js
 function areUint8ArraysEqual(a, b) {
@@ -3008,16 +2985,21 @@ var KeyList = class {
    */
   #resolveKey(key) {
     let bytes = null;
-    if (key instanceof Uint8Array) {
+    if (Object.prototype.toString.call(key) === "[object Uint8Array]") {
       bytes = key;
-    } else if (key && typeof key.toBytes === "function") {
-      bytes = key.toBytes();
+    } else if (key && typeof key === "object" && typeof key.toBytes === "function") {
+      const potentialBytes = key.toBytes();
+      if (Object.prototype.toString.call(potentialBytes) === "[object Uint8Array]") {
+        bytes = potentialBytes;
+      }
     }
-    if (!(bytes instanceof Uint8Array)) {
-      throw new Error("KeyList: Invalid key type. Key must be a Uint8Array or an object with a .toBytes() method that returns a Uint8Array.");
+    if (!bytes) {
+      throw new Error("KeyList: Invalid key type. Key must resolve to a Uint8Array.");
     }
     if (bytes.length !== 32) {
-      throw new Error("KeyList: Key must be a 32-byte Uint8Array.");
+      throw new Error(
+        `KeyList: Key must be a 32-byte Uint8Array, but received ${bytes.length} bytes.`
+      );
     }
     return bytes;
   }
@@ -3063,6 +3045,7 @@ var KeyList = class {
   /**
    * Gets a shallow copy of the keys currently in the list.
    * @returns {Uint8Array[]} An array of Uint8Array keys.
+   _
    */
   getKeys() {
     return this._keys.slice(0, this.#count);
@@ -3080,6 +3063,1072 @@ var KeyList = class {
    */
   get maxSize() {
     return this.#maxSize;
+  }
+};
+function combineUint8Arrays(arrays) {
+  return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
+}
+
+// src/slh-public.js
+var SLH_PUBLIC_KEY_LEN = 64;
+var SLHPublicKey = class {
+  #bytes;
+  constructor(value) {
+    if (typeof value === "string") {
+      const decoded = decode(ADDRESS_HRP, value);
+      throw new Error("SLH public key must be constructed from raw bytes, not an address.");
+    } else if (value instanceof Uint8Array) {
+      if (value.length !== SLH_PUBLIC_KEY_LEN) {
+        throw new Error(`SLH-DSA public key must be ${SLH_PUBLIC_KEY_LEN} bytes`);
+      }
+      this.#bytes = Uint8Array.from(value);
+    } else {
+      throw new Error("Invalid input: expected Uint8Array");
+    }
+  }
+  // Verifies a signature using the internal public key bytes
+  async verify(message, signature) {
+    return await slh_dsa_sha2_256s.verify(this.#bytes, message, signature);
+  }
+  // Returns the raw public key bytes
+  toBytes() {
+    return Uint8Array.from(this.#bytes);
+  }
+  /**
+   * Returns a Bech32m-encoded address derived from a SHA-256 hash of the public key.
+   * This avoids exposing large post-quantum keys directly in address format.
+   */
+  /*
+    toString() {
+      //const hash = sha256(this.#bytes);
+      //const fullLengthPublicKey = bech32mEncode(ADDRESS_HRP, this.#bytes);
+      //console.log(`SLH public key: ${fullLengthPublicKey}`);
+      return bech32mEncode(ADDRESS_HRP, this.#bytes);
+    }
+  */
+  // Compares this key with another by byte equality
+  equals(other) {
+    if (!other || typeof other.toBytes !== "function") return false;
+    const otherBytes = other.toBytes();
+    if (this.#bytes.length !== otherBytes.length) return false;
+    for (let i = 0; i < this.#bytes.length; i++) {
+      if (this.#bytes[i] !== otherBytes[i]) return false;
+    }
+    return true;
+  }
+};
+
+// node_modules/hash-wasm/dist/index.esm.js
+function __awaiter(thisArg, _arguments, P2, generator) {
+  function adopt(value) {
+    return value instanceof P2 ? value : new P2(function(resolve) {
+      resolve(value);
+    });
+  }
+  return new (P2 || (P2 = Promise))(function(resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+}
+var Mutex = class {
+  constructor() {
+    this.mutex = Promise.resolve();
+  }
+  lock() {
+    let begin = () => {
+    };
+    this.mutex = this.mutex.then(() => new Promise(begin));
+    return new Promise((res) => {
+      begin = res;
+    });
+  }
+  dispatch(fn) {
+    return __awaiter(this, void 0, void 0, function* () {
+      const unlock = yield this.lock();
+      try {
+        return yield Promise.resolve(fn());
+      } finally {
+        unlock();
+      }
+    });
+  }
+};
+var _a;
+function getGlobal() {
+  if (typeof globalThis !== "undefined")
+    return globalThis;
+  if (typeof self !== "undefined")
+    return self;
+  if (typeof window !== "undefined")
+    return window;
+  return global;
+}
+var globalObject = getGlobal();
+var nodeBuffer = (_a = globalObject.Buffer) !== null && _a !== void 0 ? _a : null;
+var textEncoder = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
+function hexCharCodesToInt(a, b) {
+  return (a & 15) + (a >> 6 | a >> 3 & 8) << 4 | (b & 15) + (b >> 6 | b >> 3 & 8);
+}
+function writeHexToUInt8(buf, str) {
+  const size = str.length >> 1;
+  for (let i = 0; i < size; i++) {
+    const index = i << 1;
+    buf[i] = hexCharCodesToInt(str.charCodeAt(index), str.charCodeAt(index + 1));
+  }
+}
+function hexStringEqualsUInt8(str, buf) {
+  if (str.length !== buf.length * 2) {
+    return false;
+  }
+  for (let i = 0; i < buf.length; i++) {
+    const strIndex = i << 1;
+    if (buf[i] !== hexCharCodesToInt(str.charCodeAt(strIndex), str.charCodeAt(strIndex + 1))) {
+      return false;
+    }
+  }
+  return true;
+}
+var alpha = "a".charCodeAt(0) - 10;
+var digit = "0".charCodeAt(0);
+function getDigestHex(tmpBuffer, input, hashLength) {
+  let p = 0;
+  for (let i = 0; i < hashLength; i++) {
+    let nibble = input[i] >>> 4;
+    tmpBuffer[p++] = nibble > 9 ? nibble + alpha : nibble + digit;
+    nibble = input[i] & 15;
+    tmpBuffer[p++] = nibble > 9 ? nibble + alpha : nibble + digit;
+  }
+  return String.fromCharCode.apply(null, tmpBuffer);
+}
+var getUInt8Buffer = nodeBuffer !== null ? (data) => {
+  if (typeof data === "string") {
+    const buf = nodeBuffer.from(data, "utf8");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
+  }
+  if (nodeBuffer.isBuffer(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.length);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  throw new Error("Invalid data type!");
+} : (data) => {
+  if (typeof data === "string") {
+    return textEncoder.encode(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  throw new Error("Invalid data type!");
+};
+var base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var base64Lookup = new Uint8Array(256);
+for (let i = 0; i < base64Chars.length; i++) {
+  base64Lookup[base64Chars.charCodeAt(i)] = i;
+}
+function getDecodeBase64Length(data) {
+  let bufferLength = Math.floor(data.length * 0.75);
+  const len = data.length;
+  if (data[len - 1] === "=") {
+    bufferLength -= 1;
+    if (data[len - 2] === "=") {
+      bufferLength -= 1;
+    }
+  }
+  return bufferLength;
+}
+function decodeBase64(data) {
+  const bufferLength = getDecodeBase64Length(data);
+  const len = data.length;
+  const bytes = new Uint8Array(bufferLength);
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const encoded1 = base64Lookup[data.charCodeAt(i)];
+    const encoded2 = base64Lookup[data.charCodeAt(i + 1)];
+    const encoded3 = base64Lookup[data.charCodeAt(i + 2)];
+    const encoded4 = base64Lookup[data.charCodeAt(i + 3)];
+    bytes[p] = encoded1 << 2 | encoded2 >> 4;
+    p += 1;
+    bytes[p] = (encoded2 & 15) << 4 | encoded3 >> 2;
+    p += 1;
+    bytes[p] = (encoded3 & 3) << 6 | encoded4 & 63;
+    p += 1;
+  }
+  return bytes;
+}
+var MAX_HEAP = 16 * 1024;
+var WASM_FUNC_HASH_LENGTH = 4;
+var wasmMutex = new Mutex();
+var wasmModuleCache = /* @__PURE__ */ new Map();
+function WASMInterface(binary, hashLength) {
+  return __awaiter(this, void 0, void 0, function* () {
+    let wasmInstance = null;
+    let memoryView = null;
+    let initialized = false;
+    if (typeof WebAssembly === "undefined") {
+      throw new Error("WebAssembly is not supported in this environment!");
+    }
+    const writeMemory = (data, offset = 0) => {
+      memoryView.set(data, offset);
+    };
+    const getMemory = () => memoryView;
+    const getExports = () => wasmInstance.exports;
+    const setMemorySize = (totalSize) => {
+      wasmInstance.exports.Hash_SetMemorySize(totalSize);
+      const arrayOffset = wasmInstance.exports.Hash_GetBuffer();
+      const memoryBuffer = wasmInstance.exports.memory.buffer;
+      memoryView = new Uint8Array(memoryBuffer, arrayOffset, totalSize);
+    };
+    const getStateSize = () => {
+      const view = new DataView(wasmInstance.exports.memory.buffer);
+      const stateSize = view.getUint32(wasmInstance.exports.STATE_SIZE, true);
+      return stateSize;
+    };
+    const loadWASMPromise = wasmMutex.dispatch(() => __awaiter(this, void 0, void 0, function* () {
+      if (!wasmModuleCache.has(binary.name)) {
+        const asm = decodeBase64(binary.data);
+        const promise = WebAssembly.compile(asm);
+        wasmModuleCache.set(binary.name, promise);
+      }
+      const module = yield wasmModuleCache.get(binary.name);
+      wasmInstance = yield WebAssembly.instantiate(module, {
+        // env: {
+        //   emscripten_memcpy_big: (dest, src, num) => {
+        //     const memoryBuffer = wasmInstance.exports.memory.buffer;
+        //     const memView = new Uint8Array(memoryBuffer, 0);
+        //     memView.set(memView.subarray(src, src + num), dest);
+        //   },
+        //   print_memory: (offset, len) => {
+        //     const memoryBuffer = wasmInstance.exports.memory.buffer;
+        //     const memView = new Uint8Array(memoryBuffer, 0);
+        //     console.log('print_int32', memView.subarray(offset, offset + len));
+        //   },
+        // },
+      });
+    }));
+    const setupInterface = () => __awaiter(this, void 0, void 0, function* () {
+      if (!wasmInstance) {
+        yield loadWASMPromise;
+      }
+      const arrayOffset = wasmInstance.exports.Hash_GetBuffer();
+      const memoryBuffer = wasmInstance.exports.memory.buffer;
+      memoryView = new Uint8Array(memoryBuffer, arrayOffset, MAX_HEAP);
+    });
+    const init = (bits = null) => {
+      initialized = true;
+      wasmInstance.exports.Hash_Init(bits);
+    };
+    const updateUInt8Array = (data) => {
+      let read = 0;
+      while (read < data.length) {
+        const chunk = data.subarray(read, read + MAX_HEAP);
+        read += chunk.length;
+        memoryView.set(chunk);
+        wasmInstance.exports.Hash_Update(chunk.length);
+      }
+    };
+    const update = (data) => {
+      if (!initialized) {
+        throw new Error("update() called before init()");
+      }
+      const Uint8Buffer = getUInt8Buffer(data);
+      updateUInt8Array(Uint8Buffer);
+    };
+    const digestChars = new Uint8Array(hashLength * 2);
+    const digest = (outputType, padding = null) => {
+      if (!initialized) {
+        throw new Error("digest() called before init()");
+      }
+      initialized = false;
+      wasmInstance.exports.Hash_Final(padding);
+      if (outputType === "binary") {
+        return memoryView.slice(0, hashLength);
+      }
+      return getDigestHex(digestChars, memoryView, hashLength);
+    };
+    const save = () => {
+      if (!initialized) {
+        throw new Error("save() can only be called after init() and before digest()");
+      }
+      const stateOffset = wasmInstance.exports.Hash_GetState();
+      const stateLength = getStateSize();
+      const memoryBuffer = wasmInstance.exports.memory.buffer;
+      const internalState = new Uint8Array(memoryBuffer, stateOffset, stateLength);
+      const prefixedState = new Uint8Array(WASM_FUNC_HASH_LENGTH + stateLength);
+      writeHexToUInt8(prefixedState, binary.hash);
+      prefixedState.set(internalState, WASM_FUNC_HASH_LENGTH);
+      return prefixedState;
+    };
+    const load = (state) => {
+      if (!(state instanceof Uint8Array)) {
+        throw new Error("load() expects an Uint8Array generated by save()");
+      }
+      const stateOffset = wasmInstance.exports.Hash_GetState();
+      const stateLength = getStateSize();
+      const overallLength = WASM_FUNC_HASH_LENGTH + stateLength;
+      const memoryBuffer = wasmInstance.exports.memory.buffer;
+      if (state.length !== overallLength) {
+        throw new Error(`Bad state length (expected ${overallLength} bytes, got ${state.length})`);
+      }
+      if (!hexStringEqualsUInt8(binary.hash, state.subarray(0, WASM_FUNC_HASH_LENGTH))) {
+        throw new Error("This state was written by an incompatible hash implementation");
+      }
+      const internalState = state.subarray(WASM_FUNC_HASH_LENGTH);
+      new Uint8Array(memoryBuffer, stateOffset, stateLength).set(internalState);
+      initialized = true;
+    };
+    const isDataShort = (data) => {
+      if (typeof data === "string") {
+        return data.length < MAX_HEAP / 4;
+      }
+      return data.byteLength < MAX_HEAP;
+    };
+    let canSimplify = isDataShort;
+    switch (binary.name) {
+      case "argon2":
+      case "scrypt":
+        canSimplify = () => true;
+        break;
+      case "blake2b":
+      case "blake2s":
+        canSimplify = (data, initParam) => initParam <= 512 && isDataShort(data);
+        break;
+      case "blake3":
+        canSimplify = (data, initParam) => initParam === 0 && isDataShort(data);
+        break;
+      case "xxhash64":
+      // cannot simplify
+      case "xxhash3":
+      case "xxhash128":
+      case "crc64":
+        canSimplify = () => false;
+        break;
+    }
+    const calculate = (data, initParam = null, digestParam = null) => {
+      if (!canSimplify(data, initParam)) {
+        init(initParam);
+        update(data);
+        return digest("hex", digestParam);
+      }
+      const buffer = getUInt8Buffer(data);
+      memoryView.set(buffer);
+      wasmInstance.exports.Hash_Calculate(buffer.length, initParam, digestParam);
+      return getDigestHex(digestChars, memoryView, hashLength);
+    };
+    yield setupInterface();
+    return {
+      getMemory,
+      writeMemory,
+      getExports,
+      setMemorySize,
+      init,
+      update,
+      digest,
+      save,
+      load,
+      calculate,
+      hashLength
+    };
+  });
+}
+function lockedCreate(mutex2, binary, hashLength) {
+  return __awaiter(this, void 0, void 0, function* () {
+    const unlock = yield mutex2.lock();
+    const wasm = yield WASMInterface(binary, hashLength);
+    unlock();
+    return wasm;
+  });
+}
+var mutex$l = new Mutex();
+var mutex$k = new Mutex();
+var uint32View = new DataView(new ArrayBuffer(4));
+var mutex$j = new Mutex();
+var name$h = "blake3";
+var data$h = "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IQEgAkFAaiICQcAASw0ACwsCQEHAACAHQf8BcSIGayIFIAIgBSACSRsiCUUNACAJQQNxIQtBACEFAkAgCUEESQ0AIAAgBmohByAJQfwAcSEIQQAhBQNAIAcgBWoiAkEoaiABIAVqIgotAAA6AAAgAkEpaiAKQQFqLQAAOgAAIAJBKmogCkECai0AADoAACACQStqIApBA2otAAA6AAAgCCAFQQRqIgVHDQALCwJAIAtFDQAgASAFaiEBIAUgBmogAGpBKGohBQNAIAUgAS0AADoAACABQQFqIQEgBUEBaiEFIAtBf2oiCw0ACwsgAC0AaCEHCyAAIAcgCWo6AGggA0HAAGokAAveAwQFfwN+BX8GfiMAQdABayIBJAACQCAAe6ciAkEALQCQigEiA08NAEEALQCKigFBBHIhBCABQShqIQVBACkDmIkBIQBBACkDkIkBIQZBACkDiIkBIQdBACkDgIkBIQggAyEJA0AgASAANwMYIAEgBjcDECABIAc3AwggASAINwMAIAEgA0EFdCIDQdGJAWoiCikDADcDKCABIANB2YkBaiILKQMANwMwIAEgA0HhiQFqIgwpAwA3AzggASADQemJAWoiDSkDADcDQCABIANB8YkBaikDADcDSCABIANB+YkBaikDADcDUCABIANBgYoBaikDADcDWCADQYmKAWopAwAhDiABQcAAOgBoIAEgDjcDYCABQgA3AyAgASAEOgBpIAEgADcDiAEgASAGNwOAASABIAc3A3ggASAINwNwIAFBkAFqIAFB8ABqIAVBwABCACAEQf8BcRACIAEpA7ABIQ4gASkDkAEhDyABKQO4ASEQIAEpA5gBIREgASkDwAEhEiABKQOgASETIA0gASkDyAEgASkDqAGFNwMAIAwgEiAThTcDACALIBAgEYU3AwAgCiAOIA+FNwMAIAlBf2oiCUH/AXEiAyACSw0AC0EAIAk6AJCKAQsgAUHQAWokAAvHCQIKfwV+IwBB4AJrIgUkAAJAAkAgAUGACEsNACAFIAA2AvwBIAVB/AFqIAFBgAhGIgZBECACQQEgA0EBQQIgBBABIAZBCnQiByABTw0BIAVB4ABqIgZCADcDACAFQdgAaiIIQgA3AwAgBUHQAGoiCUIANwMAIAVByABqIgpCADcDACAFQcAAaiILQgA3AwAgBUE4aiIMQgA3AwAgBUEwaiINQgA3AwAgBSADOgBqIAVCADcDKCAFQQA7AWggBUEAKQOAiQE3AwAgBUEAKQOIiQE3AwggBUEAKQOQiQE3AxAgBUEAKQOYiQE3AxggBSABQYAIRiIOrSACfDcDICAFIAAgB2pBACABIA4bEAQgBUGIAWpBMGogDSkDADcDACAFQYgBakE4aiAMKQMANwMAIAUgBSkDACIPNwOIASAFIAUpAwgiEDcDkAEgBSAFKQMQIhE3A5gBIAUgBSkDGCISNwOgASAFIAUpAyg3A7ABIAUtAGohACAFLQBpIQcgBSkDICECIAUtAGghASAFQYgBakHAAGogCykDADcDACAFQYgBakHIAGogCikDADcDACAFQYgBakHQAGogCSkDADcDACAFQYgBakHYAGogCCkDADcDACAFQYgBakHgAGogBikDADcDACAFIAE6APABIAUgAjcDqAEgBSAAIAdFckECciIAOgDxASAFIBI3A5gCIAUgETcDkAIgBSAQNwOIAiAFIA83A4ACIAVBoAJqIAVBgAJqIAVBsAFqIAEgAiAAQf8BcRACIAUpA8ACIQIgBSkDoAIhDyAFKQPIAiEQIAUpA6gCIREgBSkD0AIhEiAFKQOwAiETIAQgDkEFdGoiASAFKQPYAiAFKQO4AoU3AxggASASIBOFNwMQIAEgECARhTcDCCABIAIgD4U3AwBBAkEBIA4bIQYMAQsgAEIBIAFBf2pBCnZBAXKteUI/hYYiD6dBCnQiDiACIAMgBRAGIQcgACAOaiABIA5rIA9C////AYMgAnwgAyAFQcAAQSAgDkGACEsbahAGIQECQCAHQQFHDQAgBCAFKQMANwMAIAQgBSkDCDcDCCAEIAUpAxA3AxAgBCAFKQMYNwMYIAQgBSkDIDcDICAEIAUpAyg3AyggBCAFKQMwNwMwIAQgBSkDODcDOEECIQYMAQtBACEGQQAhAAJAIAEgB2oiCUECSQ0AIAlBfmoiCkEBdkEBaiIGQQNxIQ5BACEHAkAgCkEGSQ0AIAZB/P///wdxIQhBACEHIAVBiAFqIQEgBSEAA0AgASAANgIAIAFBDGogAEHAAWo2AgAgAUEIaiAAQYABajYCACABQQRqIABBwABqNgIAIABBgAJqIQAgAUEQaiEBIAggB0EEaiIHRw0ACwsgCkF+cSEIAkAgDkUNACAFIAdBBnRqIQEgBUGIAWogB0ECdGohAANAIAAgATYCACABQcAAaiEBIABBBGohACAOQX9qIg4NAAsLIAhBAmohAAsgBUGIAWogBkEBQgBBACADQQRyQQBBACAEEAEgACAJTw0AIAQgBkEFdGoiASAFIAZBBnRqIgApAwA3AwAgASAAKQMINwMIIAEgACkDEDcDECABIAApAxg3AxggBkEBaiEGCyAFQeACaiQAIAYLrRAIAn8EfgF/AX4EfwR+BH8EfiMAQfABayIBJAACQCAARQ0AAkBBAC0AkIoBIgINACABQTBqQQApA9CJATcDACABQThqQQApA9iJATcDACABQQApA6CJASIDNwMAIAFBACkDqIkBIgQ3AwggAUEAKQOwiQEiBTcDECABQQApA7iJASIGNwMYIAFBACkDyIkBNwMoQQAtAIqKASECQQAtAImKASEHQQApA8CJASEIQQAtAIiKASEJIAFBwABqQQApA+CJATcDACABQcgAakEAKQPoiQE3AwAgAUHQAGpBACkD8IkBNwMAIAFB2ABqQQApA/iJATcDACABQeAAakEAKQOAigE3AwAgASAJOgBoIAEgCDcDICABIAIgB0VyIgJBAnI6AGkgAUEoaiEKQgAhCEGACSELIAJBCnJB/wFxIQwDQCABQbABaiABIAogCUH/AXEgCCAMEAIgASABKQPQASINIAEpA7ABhTcDcCABIAEpA9gBIg4gASkDuAGFNwN4IAEgASkD4AEiDyABKQPAAYU3A4ABIAEgASkD6AEiECAGhTcDqAEgASAPIAWFNwOgASABIA4gBIU3A5gBIAEgDSADhTcDkAEgASAQIAEpA8gBhTcDiAEgAEHAACAAQcAASRsiEUF/aiESAkACQCARQQdxIhMNACABQfAAaiECIAshByARIRQMAQsgEUH4AHEhFCABQfAAaiECIAshBwNAIAcgAi0AADoAACAHQQFqIQcgAkEBaiECIBNBf2oiEw0ACwsCQCASQQdJDQADQCAHIAIpAAA3AAAgB0EIaiEHIAJBCGohAiAUQXhqIhQNAAsLIAhCAXwhCCALIBFqIQsgACARayIADQAMAgsLAkACQAJAQQAtAImKASIHQQZ0QQBBAC0AiIoBIhFrRg0AIAEgEToAaCABQQApA4CKATcDYCABQQApA/iJATcDWCABQQApA/CJATcDUCABQQApA+iJATcDSCABQQApA+CJATcDQCABQQApA9iJATcDOCABQQApA9CJATcDMCABQQApA8iJATcDKCABQQApA8CJASIINwMgIAFBACkDuIkBIgM3AxggAUEAKQOwiQEiBDcDECABQQApA6iJASIFNwMIIAFBACkDoIkBIgY3AwAgAUEALQCKigEiEyAHRXJBAnIiCzoAaSATQQRyIRNBACkDmIkBIQ1BACkDkIkBIQ5BACkDiIkBIQ9BACkDgIkBIRAMAQtBwAAhESABQcAAOgBoQgAhCCABQgA3AyAgAUEAKQOYiQEiDTcDGCABQQApA5CJASIONwMQIAFBACkDiIkBIg83AwggAUEAKQOAiQEiEDcDACABQQAtAIqKAUEEciITOgBpIAEgAkF+aiICQQV0IgdByYoBaikDADcDYCABIAdBwYoBaikDADcDWCABIAdBuYoBaikDADcDUCABIAdBsYoBaikDADcDSCABIAdBqYoBaikDADcDQCABIAdBoYoBaikDADcDOCABIAdBmYoBaikDADcDMCABIAdBkYoBaikDADcDKCATIQsgECEGIA8hBSAOIQQgDSEDIAJFDQELIAJBf2oiB0EFdCIUQZGKAWopAwAhFSAUQZmKAWopAwAhFiAUQaGKAWopAwAhFyAUQamKAWopAwAhGCABIAM3A4gBIAEgBDcDgAEgASAFNwN4IAEgBjcDcCABQbABaiABQfAAaiABQShqIhQgESAIIAtB/wFxEAIgASATOgBpIAFBwAA6AGggASAYNwNAIAEgFzcDOCABIBY3AzAgASAVNwMoIAFCADcDICABIA03AxggASAONwMQIAEgDzcDCCABIBA3AwAgASABKQPoASABKQPIAYU3A2AgASABKQPgASABKQPAAYU3A1ggASABKQPYASABKQO4AYU3A1AgASABKQPQASABKQOwAYU3A0ggB0UNACACQQV0QemJAWohAiATQf8BcSERA0AgAkFoaikDACEIIAJBcGopAwAhAyACQXhqKQMAIQQgAikDACEFIAEgDTcDiAEgASAONwOAASABIA83A3ggASAQNwNwIAFBsAFqIAFB8ABqIBRBwABCACAREAIgASATOgBpIAFBwAA6AGggASAFNwNAIAEgBDcDOCABIAM3AzAgASAINwMoIAFCADcDICABIA03AxggASAONwMQIAEgDzcDCCABIBA3AwAgASABKQPoASABKQPIAYU3A2AgASABKQPgASABKQPAAYU3A1ggASABKQPYASABKQO4AYU3A1AgASABKQPQASABKQOwAYU3A0ggAkFgaiECIAdBf2oiBw0ACwsgAUEoaiEJQgAhCEGACSELIBNBCHJB/wFxIQoDQCABQbABaiABIAlBwAAgCCAKEAIgASABKQPQASIDIAEpA7ABhTcDcCABIAEpA9gBIgQgASkDuAGFNwN4IAEgASkD4AEiBSABKQPAAYU3A4ABIAEgDSABKQPoASIGhTcDqAEgASAOIAWFNwOgASABIA8gBIU3A5gBIAEgECADhTcDkAEgASAGIAEpA8gBhTcDiAEgAEHAACAAQcAASRsiEUF/aiESAkACQCARQQdxIhMNACABQfAAaiECIAshByARIRQMAQsgEUH4AHEhFCABQfAAaiECIAshBwNAIAcgAi0AADoAACAHQQFqIQcgAkEBaiECIBNBf2oiEw0ACwsCQCASQQdJDQADQCAHIAIpAAA3AAAgB0EIaiEHIAJBCGohAiAUQXhqIhQNAAsLIAhCAXwhCCALIBFqIQsgACARayIADQALCyABQfABaiQAC6MCAQR+AkACQCAAQSBGDQBCq7OP/JGjs/DbACEBQv+kuYjFkdqCm38hAkLy5rvjo6f9p6V/IQNC58yn0NbQ67O7fyEEQQAhAAwBC0EAKQOYCSEBQQApA5AJIQJBACkDiAkhA0EAKQOACSEEQRAhAAtBACAAOgCKigFBAEIANwOAigFBAEIANwP4iQFBAEIANwPwiQFBAEIANwPoiQFBAEIANwPgiQFBAEIANwPYiQFBAEIANwPQiQFBAEIANwPIiQFBAEIANwPAiQFBACABNwO4iQFBACACNwOwiQFBACADNwOoiQFBACAENwOgiQFBACABNwOYiQFBACACNwOQiQFBACADNwOIiQFBACAENwOAiQFBAEEAOgCQigFBAEEAOwGIigELBgAgABADCwYAIAAQBwsGAEGAiQELqwIBBH4CQAJAIAFBIEYNAEKrs4/8kaOz8NsAIQNC/6S5iMWR2oKbfyEEQvLmu+Ojp/2npX8hBULnzKfQ1tDrs7t/IQZBACEBDAELQQApA5gJIQNBACkDkAkhBEEAKQOICSEFQQApA4AJIQZBECEBC0EAIAE6AIqKAUEAQgA3A4CKAUEAQgA3A/iJAUEAQgA3A/CJAUEAQgA3A+iJAUEAQgA3A+CJAUEAQgA3A9iJAUEAQgA3A9CJAUEAQgA3A8iJAUEAQgA3A8CJAUEAIAM3A7iJAUEAIAQ3A7CJAUEAIAU3A6iJAUEAIAY3A6CJAUEAIAM3A5iJAUEAIAQ3A5CJAUEAIAU3A4iJAUEAIAY3A4CJAUEAQQA6AJCKAUEAQQA7AYiKASAAEAMgAhAHCwsLAQBBgAgLBHgHAAA=";
+var hash$h = "215d875f";
+var wasmJson$h = {
+  name: name$h,
+  data: data$h,
+  hash: hash$h
+};
+var mutex$i = new Mutex();
+var wasmCache$i = null;
+function validateBits$2(bits) {
+  if (!Number.isInteger(bits) || bits < 8 || bits % 8 !== 0) {
+    return new Error("Invalid variant! Valid values: 8, 16, ...");
+  }
+  return null;
+}
+function blake3(data, bits = 256, key = null) {
+  if (validateBits$2(bits)) {
+    return Promise.reject(validateBits$2(bits));
+  }
+  let keyBuffer = null;
+  let initParam = 0;
+  if (key !== null) {
+    keyBuffer = getUInt8Buffer(key);
+    if (keyBuffer.length !== 32) {
+      return Promise.reject(new Error("Key length must be exactly 32 bytes"));
+    }
+    initParam = 32;
+  }
+  const hashLength = bits / 8;
+  const digestParam = hashLength;
+  if (wasmCache$i === null || wasmCache$i.hashLength !== hashLength) {
+    return lockedCreate(mutex$i, wasmJson$h, hashLength).then((wasm) => {
+      wasmCache$i = wasm;
+      if (initParam === 32) {
+        wasmCache$i.writeMemory(keyBuffer);
+      }
+      return wasmCache$i.calculate(data, initParam, digestParam);
+    });
+  }
+  try {
+    if (initParam === 32) {
+      wasmCache$i.writeMemory(keyBuffer);
+    }
+    const hash = wasmCache$i.calculate(data, initParam, digestParam);
+    return Promise.resolve(hash);
+  } catch (err2) {
+    return Promise.reject(err2);
+  }
+}
+function createBLAKE3(bits = 256, key = null) {
+  if (validateBits$2(bits)) {
+    return Promise.reject(validateBits$2(bits));
+  }
+  let keyBuffer = null;
+  let initParam = 0;
+  if (key !== null) {
+    keyBuffer = getUInt8Buffer(key);
+    if (keyBuffer.length !== 32) {
+      return Promise.reject(new Error("Key length must be exactly 32 bytes"));
+    }
+    initParam = 32;
+  }
+  const outputSize = bits / 8;
+  const digestParam = outputSize;
+  return WASMInterface(wasmJson$h, outputSize).then((wasm) => {
+    if (initParam === 32) {
+      wasm.writeMemory(keyBuffer);
+    }
+    wasm.init(initParam);
+    const obj = {
+      init: initParam === 32 ? () => {
+        wasm.writeMemory(keyBuffer);
+        wasm.init(initParam);
+        return obj;
+      } : () => {
+        wasm.init(initParam);
+        return obj;
+      },
+      update: (data) => {
+        wasm.update(data);
+        return obj;
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: Conflict with IHasher type
+      digest: (outputType) => wasm.digest(outputType, digestParam),
+      save: () => wasm.save(),
+      load: (data) => {
+        wasm.load(data);
+        return obj;
+      },
+      blockSize: 64,
+      digestSize: outputSize
+    };
+    return obj;
+  });
+}
+var mutex$h = new Mutex();
+var mutex$g = new Mutex();
+var polyBuffer = new Uint8Array(8);
+var mutex$f = new Mutex();
+var mutex$e = new Mutex();
+var mutex$d = new Mutex();
+var mutex$c = new Mutex();
+var mutex$b = new Mutex();
+var mutex$a = new Mutex();
+var mutex$9 = new Mutex();
+var mutex$8 = new Mutex();
+var mutex$7 = new Mutex();
+var mutex$6 = new Mutex();
+var mutex$5 = new Mutex();
+var seedBuffer$2 = new Uint8Array(8);
+var mutex$4 = new Mutex();
+var seedBuffer$1 = new Uint8Array(8);
+var mutex$3 = new Mutex();
+var seedBuffer = new Uint8Array(8);
+var mutex$2 = new Mutex();
+var mutex$1 = new Mutex();
+var mutex = new Mutex();
+
+// src/slh-keypair.js
+var SLHKeypairImpl = class {
+  #publicKeyInstance;
+  #secretKeyBytes;
+  constructor(publicKeyInstance, secretKeyBytes) {
+    this.#publicKeyInstance = publicKeyInstance;
+    this.#secretKeyBytes = secretKeyBytes;
+  }
+  get publicKey() {
+    return this.#publicKeyInstance;
+  }
+  /**
+   * Returns the full 128-byte secret key (used for signing).
+   */
+  get secretKey() {
+    return Uint8Array.from(this.#secretKeyBytes);
+  }
+  /**
+   * Signs a message using the private key.
+   */
+  async sign(message) {
+    return await slh_dsa_sha2_256s.sign(this.#secretKeyBytes, message);
+  }
+};
+var SLHKeypair = {
+  /**
+   * Generates a new SLH-DSA keypair from a random seed.
+   */
+  /*
+  generate: async () => {
+      const seed = randomBytes(algorithm.seedLen); // usually 96 bytes
+      const { publicKey, secretKey } = await algorithm.keygen(seed);
+      const publicKeyInstance = new SLHPublicKey(publicKey);
+      return new SLHKeypairImpl(publicKeyInstance, secretKey, seed);
+  },
+  */
+  /**
+   * Creates an SLHKeypairImpl from a seed, extending the seed to the correct length using BLAKE3 if necessary.
+   * @param {Uint8Array} seed - The input seed.
+   * @returns {Promise<SLHKeypairImpl>} A promise that resolves to an SLHKeypairImpl instance.
+   * @throws {Error} If the seed is invalid after extension.
+   */
+  fromSecretKey: async (seed) => {
+    let extendedSeed = seed;
+    if (!seed) {
+      throw new Error("Seed cannot be null or undefined.");
+    }
+    if (seed.length !== slh_dsa_sha2_256s.seedLen) {
+      const hashHex = await blake3(seed, slh_dsa_sha2_256s.seedLen * 8);
+      extendedSeed = new Uint8Array(hashHex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+    }
+    const { publicKey, secretKey } = await slh_dsa_sha2_256s.keygen(extendedSeed);
+    const publicKeyInstance = new SLHPublicKey(publicKey);
+    return new SLHKeypairImpl(publicKeyInstance, secretKey, extendedSeed);
+  }
+};
+
+// src/address.js
+var Address = class {
+  constructor(addressX) {
+    if (typeof addressX === "string") {
+      try {
+        this.publicKeyPairHash = decode(ADDRESS_HRP, addressX);
+      } catch (e) {
+        throw new Error(`Invalid Bech32m address format: ${addressX}. ${e.message}`);
+      }
+    } else if (addressX instanceof Uint8Array) {
+      this.publicKeyPairHash = addressX;
+    } else {
+      throw new Error("Invalid input type for Address constructor. Must be a Uint8Array or a Bech32m string.");
+    }
+    if (this.publicKeyPairHash.length !== ADDRESS_BYTE_LENGTH) {
+      throw new Error(`Public key hash bytes must be ${ADDRESS_BYTE_LENGTH} bytes long, received ${this.publicKeyPairHash.length}`);
+    }
+  }
+  toString() {
+    try {
+      return encode(ADDRESS_HRP, this.publicKeyPairHash);
+    } catch (e) {
+      throw new Error(`Failed to encode public key pair hash to Bech32m: ${e.message}`);
+    }
+  }
+  toBytes() {
+    return this.publicKeyPairHash;
+  }
+};
+
+// src/wallet.js
+var WalletImpl = class {
+  #masterKey;
+  constructor(masterKey) {
+    if (!(masterKey instanceof HDKey)) {
+      throw new Error("Invalid masterKey provided.");
+    }
+    this.#masterKey = masterKey;
+  }
+  /** Derives an Ed25519 Keypair using a BIP-44 path. */
+  deriveAccountEdDsa(index) {
+    try {
+      const derivedHDKey = this.#masterKey.derive(`${ED25519_DERIVATION_BASE}/${index}'`);
+      return Keypair.fromSecretKey(derivedHDKey.privateKey);
+    } catch (error) {
+      throw new Error(`Failed to derive EdDSA account for path ${index}: ${error.message}`);
+    }
+  }
+  /**
+   * Derives a post-quantum (SLH-DSA) Keypair.
+   * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+   */
+  async getAccountSlhDsa(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const path = `${SLHDSA_DERIVATION_BASE}/${index}'`;
+    try {
+      const derivedHDKey = this.#masterKey.derive(path);
+      const pqcSeed = derivedHDKey.privateKey;
+      return await SLHKeypair.fromSecretKey(pqcSeed);
+    } catch (error) {
+      throw new Error(`Failed to derive SLH-DSA account for path ${path}: ${error.message}`);
+    }
+  }
+  /**
+   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
+  * and derives a unified address from both public keys.
+  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+  */
+  async getAccount(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const edDsa = this.deriveAccountEdDsa(index);
+    const slhDsa = await this.getAccountSlhDsa(index);
+    const edPublicKeyBytes = edDsa.publicKey.toBytes();
+    const slhPublicKeyBytes = slhDsa.publicKey.toBytes();
+    const blake3Hasher = await createBLAKE3(ADDRESS_BYTE_LENGTH * 8);
+    blake3Hasher.update(edPublicKeyBytes);
+    blake3Hasher.update(slhPublicKeyBytes);
+    const publicKeyPairHash = blake3Hasher.digest("binary");
+    const address = new Address(publicKeyPairHash);
+    return {
+      edDsa,
+      slhDsa,
+      publicKeyPairHash,
+      address
+    };
+  }
+  /**
+   * Exports the raw Ed25519 private key for an account. Use with caution.
+   * @param {number} index - The hardened account index.
+   */
+  exportPrivateKey(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const path = `${ED25519_DERIVATION_BASE}/${index}'`;
+    try {
+      const derivedHDKey = this.#masterKey.derive(path);
+      return Uint8Array.from(derivedHDKey.privateKey);
+    } catch (error) {
+      throw new Error(`Failed to export private key for index ${index}: ${error.message}`);
+    }
+  }
+};
+var Wallet = {
+  /**
+   * Creates a wallet from a BIP-39 mnemonic phrase.
+   * @param {string} mnemonic - The seed phrase.
+   * @param {string} [passphrase] - Optional BIP-39 passphrase.
+   */
+  fromMnemonic: (mnemonic, passphrase) => {
+    const seed = mnemonicToSeed(mnemonic, passphrase);
+    const masterKey = HDKey.fromMasterSeed(seed);
+    return new WalletImpl(masterKey);
+  }
+};
+
+// src/connection.js
+var ConnectionImpl = class {
+  constructor(cluster = "devnet") {
+    this.url = this._resolveClusterUrl(cluster);
+  }
+  _resolveClusterUrl(cluster) {
+    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) {
+      return cluster;
+    }
+    const clusterUrls = {
+      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
+      devnet: "https://api.devnet.getlea.org",
+      testnet: "https://api.testnet.getlea.org",
+      local: "http://localhost:3000",
+      localhost: "http://localhost:3000"
+    };
+    if (!clusterUrls[cluster]) {
+      throw new Error(`Unknown cluster: ${cluster}`);
+    }
+    return clusterUrls[cluster];
+  }
+  async _sendRequest(method, params) {
+    const requestBody = {
+      jsonrpc: "1.0",
+      id: 1,
+      method
+    };
+    if (params !== void 0) {
+      requestBody.params = params;
+    }
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // is not kept alive and reused for the next request.
+        // PQC signatutres take a long time to compute, so we want to avoid broken pipe
+        "Connection": "close"
+      },
+      body: JSON.stringify(requestBody)
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`RPC error: ${data.error.message} (Code: ${data.error.code})`);
+    }
+    if (data.result === void 0) {
+      throw new Error(`Malformed response: Missing 'result' field.`);
+    }
+    return data.result;
+  }
+  // --- Public API Methods ---
+  getVersion() {
+    return this._sendRequest("getVersion");
+  }
+  getLatestBlockhash() {
+    return this._sendRequest("getLatestBlockhash");
+  }
+  getBalance(keys) {
+    return this._sendRequest("getBalance", keys);
+  }
+  getTransaction(id) {
+    return this._sendRequest("getTransaction", [id]);
+  }
+  getTransactionsForAccount(opts) {
+    return this._sendRequest("getTransactionsForAccount", [opts]);
+  }
+  sendTransaction(txInput) {
+    let paramsForServer;
+    if (typeof txInput === "string") {
+      paramsForServer = [txInput];
+    } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === "string") {
+      paramsForServer = txInput;
+    } else {
+      return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
+    }
+    return this._sendRequest("sendTransaction", paramsForServer);
+  }
+};
+var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
+
+// node_modules/@leachain/sctp/dist/sctp.web.js
+var __toBinary = /* @__PURE__ */ (() => {
+  var table = new Uint8Array(128);
+  for (var i = 0; i < 64; i++) table[i < 26 ? i + 65 : i < 52 ? i + 71 : i < 62 ? i - 4 : i * 4 - 205] = i;
+  return (base64) => {
+    var n = base64.length, bytes = new Uint8Array((n - (base64[n - 1] == "=") - (base64[n - 2] == "=")) * 3 / 4 | 0);
+    for (var i2 = 0, j = 0; i2 < n; ) {
+      var c0 = table[base64.charCodeAt(i2++)], c1 = table[base64.charCodeAt(i2++)];
+      var c2 = table[base64.charCodeAt(i2++)], c3 = table[base64.charCodeAt(i2++)];
+      bytes[j++] = c0 << 2 | c1 >> 4;
+      bytes[j++] = c1 << 4 | c2 >> 2;
+      bytes[j++] = c2 << 6 | c3;
+    }
+    return bytes;
+  };
+})();
+var sctp_mvp_enc_default = __toBinary("AGFzbQEAAAABKAlgAX8AYAAAYAF9AGADf39/AGABfABgAX4AYAJ/fgBgAX8Bf2AAAX8CEQEDZW52CV9fbGVhX2xvZwAAAxsaAQACAwQAAAUAAAMFAAAFAAUGBwgACAgIAQcEBQFwAQEBBQMBAAMGCAF/AUGQjQgLB5gEFwZtZW1vcnkCABFzY3RwX2VuY29kZXJfaW5pdAAVFV9fbGVhX2FsbG9jYXRvcl9yZXNldAAZDF9fbGVhX21hbGxvYwAaEXNjdHBfZW5jb2Rlcl9kYXRhABQRc2N0cF9lbmNvZGVyX3NpemUAFhdzY3RwX2VuY29kZXJfYWRkX3ZlY3RvcgATFnNjdHBfZW5jb2Rlcl9hZGRfc2hvcnQAChVzY3RwX2VuY29kZXJfYWRkX2ludDgACRZzY3RwX2VuY29kZXJfYWRkX3VpbnQ4ABAWc2N0cF9lbmNvZGVyX2FkZF9pbnQxNgAGF3NjdHBfZW5jb2Rlcl9hZGRfdWludDE2AA0Wc2N0cF9lbmNvZGVyX2FkZF9pbnQzMgAHF3NjdHBfZW5jb2Rlcl9hZGRfdWludDMyAA4Wc2N0cF9lbmNvZGVyX2FkZF9pbnQ2NAAIF3NjdHBfZW5jb2Rlcl9hZGRfdWludDY0AA8Yc2N0cF9lbmNvZGVyX2FkZF9mbG9hdDMyAAMYc2N0cF9lbmNvZGVyX2FkZF9mbG9hdDY0AAUYc2N0cF9lbmNvZGVyX2FkZF91bGViMTI4ABEYc2N0cF9lbmNvZGVyX2FkZF9zbGViMTI4AAwUc2N0cF9lbmNvZGVyX2FkZF9lb2YAARNfX2xlYV9nZXRfaGVhcF9iYXNlABcSX19sZWFfZ2V0X2hlYXBfdG9wABgKixcaXQEDfwJAAkBBACgC8IiAgAAiAEUNACAAKAIIIgFBAWoiAiAAKAIESw0BIAAgAjYCCCAAKAIAIAFqQQ86AAAPC0GkiICAABCCgICAAAAAC0GAiICAABCCgICAAAAAC60BAQR/AkAgAEUNAEEAIQECQCAALQAAIgJFDQAgAEEBaiEDQQAhAANAIABBgImAgABqIAI6AAAgAEEBaiEBIAMgAGotAAAiAkUNASAAQf4DSSEEIAEhACAEDQALCyABQYCJgIAAakEAOgAAQYCJgIAAEICAgIAAQYB8IQADQCAAQYCNgIAAakEAOgAAIABBAWoiASAATyECIAEhACACDQALDwtBAEEAOgCAiYCAAAuPAQEEfyOAgICAAEEQayIBJICAgIAAIAEgADgCDAJAAkBBACgC8IiAgAAiAkUNACACKAIIIgNBAWoiBCACKAIESw0BIAIgBDYCCCACKAIAIANqQQo6AAAgAiABQQxqQQQQhICAgAAgAUEQaiSAgICAAA8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALdQECfwJAIAAoAggiAyACaiIEIAAoAgRLDQACQCACRQ0AIAAoAgAgA2ohBCACIQMDQCAEIAEtAAA6AAAgAUEBaiEBIARBAWohBCADQX9qIgMNAAsgACgCCCACaiEECyAAIAQ2AggPC0GAiICAABCCgICAAAAAC48BAQR/I4CAgIAAQRBrIgEkgICAgAAgASAAOQMIAkACQEEAKALwiICAACICRQ0AIAIoAggiA0EBaiIEIAIoAgRLDQEgAiAENgIIIAIoAgAgA2pBCzoAACACIAFBCGpBCBCEgICAACABQRBqJICAgIAADwtBpIiAgAAQgoCAgAAAAAtBgIiAgAAQgoCAgAAAAAuPAQEDfyOAgICAAEEQayIBJICAgIAAIAEgADsBDgJAAkBBACgC8IiAgAAiAEUNACAAKAIIIgJBAWoiAyAAKAIESw0BIAAgAzYCCCAAKAIAIAJqQQI6AAAgACABQQ5qQQIQhICAgAAgAUEQaiSAgICAAA8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALjwEBA38jgICAgABBEGsiASSAgICAACABIAA2AgwCQAJAQQAoAvCIgIAAIgBFDQAgACgCCCICQQFqIgMgACgCBEsNASAAIAM2AgggACgCACACakEEOgAAIAAgAUEMakEEEISAgIAAIAFBEGokgICAgAAPC0GkiICAABCCgICAAAAAC0GAiICAABCCgICAAAAAC48BAQR/I4CAgIAAQRBrIgEkgICAgAAgASAANwMIAkACQEEAKALwiICAACICRQ0AIAIoAggiA0EBaiIEIAIoAgRLDQEgAiAENgIIIAIoAgAgA2pBBjoAACACIAFBCGpBCBCEgICAACABQRBqJICAgIAADwtBpIiAgAAQgoCAgAAAAAtBgIiAgAAQgoCAgAAAAAuPAQEDfyOAgICAAEEQayIBJICAgIAAIAEgADoADwJAAkBBACgC8IiAgAAiAEUNACAAKAIIIgJBAWoiAyAAKAIESw0BIAAgAzYCCCAAKAIAIAJqQQA6AAAgACABQQ9qQQEQhICAgAAgAUEQaiSAgICAAA8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALSAEBfwJAAkBBACgC8IiAgAAiAUUNACAAQRBPDQEgAUEMIAAQi4CAgAAPC0GkiICAABCCgICAAAAAC0HDiICAABCCgICAAAAAC0MBAn8CQCAAKAIIIgNBAWoiBCAAKAIETQ0AQYCIgIAAEIKAgIAAAAALIAAgBDYCCCAAKAIAIANqIAJBBHQgAXI6AAAL6AEDA38BfgJ/AkACQAJAQQAoAvCIgIAAIgFFDQAgASgCCCICQQFqIgMgASgCBEsNASABIAM2AgggASgCACACakEJOgAAA0AgAEIHhyEEIACnIQICQAJAIABCwABUDQAgAkGAf3IhA0EAIQUgBEJ/Ug0BIABCwACDUA0BCyACQf8AcSEDQQEhBQsgASgCCCICQQFqIgYgASgCBEsNAyABIAY2AgggASgCACACaiADOgAAIAQhACAFRQ0ACw8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALjwEBA38jgICAgABBEGsiASSAgICAACABIAA7AQ4CQAJAQQAoAvCIgIAAIgBFDQAgACgCCCICQQFqIgMgACgCBEsNASAAIAM2AgggACgCACACakEDOgAAIAAgAUEOakECEISAgIAAIAFBEGokgICAgAAPC0GkiICAABCCgICAAAAAC0GAiICAABCCgICAAAAAC48BAQN/I4CAgIAAQRBrIgEkgICAgAAgASAANgIMAkACQEEAKALwiICAACIARQ0AIAAoAggiAkEBaiIDIAAoAgRLDQEgACADNgIIIAAoAgAgAmpBBToAACAAIAFBDGpBBBCEgICAACABQRBqJICAgIAADwtBpIiAgAAQgoCAgAAAAAtBgIiAgAAQgoCAgAAAAAuPAQEEfyOAgICAAEEQayIBJICAgIAAIAEgADcDCAJAAkBBACgC8IiAgAAiAkUNACACKAIIIgNBAWoiBCACKAIESw0BIAIgBDYCCCACKAIAIANqQQc6AAAgAiABQQhqQQgQhICAgAAgAUEQaiSAgICAAA8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALjwEBA38jgICAgABBEGsiASSAgICAACABIAA6AA8CQAJAQQAoAvCIgIAAIgBFDQAgACgCCCICQQFqIgMgACgCBEsNASAAIAM2AgggACgCACACakEBOgAAIAAgAUEPakEBEISAgIAAIAFBEGokgICAgAAPC0GkiICAABCCgICAAAAAC0GAiICAABCCgICAAAAAC2cBA38CQAJAQQAoAvCIgIAAIgFFDQAgASgCCCICQQFqIgMgASgCBEsNASABIAM2AgggASgCACACakEIOgAAIAEgABCSgICAAA8LQaSIgIAAEIKAgIAAAAALQYCIgIAAEIKAgIAAAAALXQECfwJAA0AgACgCCCICQQFqIgMgACgCBEsNASAAIAM2AgggACgCACACaiABp0H/AHEgAUL/AFYiAkEHdHI6AAAgAUIHiCEBIAINAAsPC0GAiICAABCCgICAAAAAC7wBAQN/AkACQAJAQQAoAvCIgIAAIgFFDQACQAJAIABBDksNACABQQ0gAEH/AXEQi4CAgAAMAQsgASgCCCICQQFqIgMgASgCBEsNAiABIAM2AgggASgCACACakH9AToAACABIACtEJKAgIAACyABKAIIIgIgAGoiACABKAIESw0CIAEgADYCCCABKAIAIAJqDwtBpIiAgAAQgoCAgAAAAAtBgIiAgAAQgoCAgAAAAAtBgIiAgAAQgoCAgAAAAAsnAQF/AkBBACgC8IiAgAAiAA0AQaSIgIAAEIKAgIAAAAALIAAoAgALigEBA39BgIB8IQEDQCABQZCNhIAAakEAOgAAIAFBAWoiAiABTyEDIAIhASADDQALQQBBkI2AgAA2AvCIgIAAQQBBDDYCgI2AgAACQCAAQfX/A0kNAAAAC0EAIAA2ApSNgIAAQQBBnI2AgAA2ApCNgIAAQQAgAEEMajYCgI2AgABBAEEANgKYjYCAAAsnAQF/AkBBACgC8IiAgAAiAA0AQaSIgIAAEIKAgIAAAAALIAAoAggLCABBkI2AgAALCwBBACgCgI2AgAALOgEDf0GAgHwhAANAIABBkI2EgABqQQA6AAAgAEEBaiIBIABPIQIgASEAIAINAAtBAEEANgKAjYCAAAs1AQF/AkBBgIAEQQAoAoCNgIAAIgFrIABPDQAAAAtBACABIABqNgKAjYCAACABQZCNgIAAagsLawEAQYAIC2RBQk9SVDogU0NUUCBlbmNvZGVyIG91dCBvZiBjYXBhY2l0eQBBQk9SVDogZW5jb2RlciBub3QgaW5pdGlhbGl6ZWQAQUJPUlQ6IHNob3J0IHZhbHVlIG11c3QgYmUgPD0gMTUAAPwEBG5hbWUB1AQbAAlfX2xlYV9sb2cBFHNjdHBfZW5jb2Rlcl9hZGRfZW9mAgdsZWFfbG9nAxhzY3RwX2VuY29kZXJfYWRkX2Zsb2F0MzIEGF9zY3RwX2VuY29kZXJfd3JpdGVfZGF0YQUYc2N0cF9lbmNvZGVyX2FkZF9mbG9hdDY0BhZzY3RwX2VuY29kZXJfYWRkX2ludDE2BxZzY3RwX2VuY29kZXJfYWRkX2ludDMyCBZzY3RwX2VuY29kZXJfYWRkX2ludDY0CRVzY3RwX2VuY29kZXJfYWRkX2ludDgKFnNjdHBfZW5jb2Rlcl9hZGRfc2hvcnQLGl9zY3RwX2VuY29kZXJfd3JpdGVfaGVhZGVyDBhzY3RwX2VuY29kZXJfYWRkX3NsZWIxMjgNF3NjdHBfZW5jb2Rlcl9hZGRfdWludDE2DhdzY3RwX2VuY29kZXJfYWRkX3VpbnQzMg8Xc2N0cF9lbmNvZGVyX2FkZF91aW50NjQQFnNjdHBfZW5jb2Rlcl9hZGRfdWludDgRGHNjdHBfZW5jb2Rlcl9hZGRfdWxlYjEyOBIbX3NjdHBfZW5jb2Rlcl93cml0ZV91bGViMTI4ExdzY3RwX2VuY29kZXJfYWRkX3ZlY3RvchQRc2N0cF9lbmNvZGVyX2RhdGEVEXNjdHBfZW5jb2Rlcl9pbml0FhFzY3RwX2VuY29kZXJfc2l6ZRcTX19sZWFfZ2V0X2hlYXBfYmFzZRgSX19sZWFfZ2V0X2hlYXBfdG9wGQ9hbGxvY2F0b3JfcmVzZXQaBm1hbGxvYwcSAQAPX19zdGFja19wb2ludGVyCQoBAAcucm9kYXRhAC0JcHJvZHVjZXJzAQxwcm9jZXNzZWQtYnkBDERlYmlhbiBjbGFuZwYxNC4wLjY=");
+var wasmModule = null;
+var SctpEncoderImpl = class {
+  /**
+   * @private
+   * @param {WebAssembly.Instance} instance The WASM instance.
+   * @param {WebAssembly.Memory} memory The WASM memory.
+   */
+  constructor(instance, memory) {
+    this.instance = instance;
+    this.memory = memory;
+  }
+  /**
+   * Initializes the encoder's internal buffer.
+   * This method must be called before any other methods.
+   * @param {number} [initialCapacity=1024] The initial capacity of the encoder buffer.
+   */
+  init(initialCapacity = 1024) {
+    this.instance.exports.sctp_encoder_init(initialCapacity);
+  }
+  /**
+   * Adds an 8-bit signed integer to the buffer.
+   * @param {number} value
+   */
+  addInt8(value) {
+    this.instance.exports.sctp_encoder_add_int8(value);
+  }
+  /**
+   * Adds an 8-bit unsigned integer to the buffer.
+   * @param {number} value
+   */
+  addUint8(value) {
+    this.instance.exports.sctp_encoder_add_uint8(value);
+  }
+  /**
+   * Adds a 16-bit signed integer to the buffer.
+   * @param {number} value
+   */
+  addInt16(value) {
+    this.instance.exports.sctp_encoder_add_int16(value);
+  }
+  /**
+   * Adds a 16-bit unsigned integer to the buffer.
+   * @param {number} value
+   */
+  addUint16(value) {
+    this.instance.exports.sctp_encoder_add_uint16(value);
+  }
+  /**
+   * Adds a 32-bit signed integer to the buffer.
+   * @param {number} value
+   */
+  addInt32(value) {
+    this.instance.exports.sctp_encoder_add_int32(value);
+  }
+  /**
+   * Adds a 32-bit unsigned integer to the buffer.
+   * @param {number} value
+   */
+  addUint32(value) {
+    this.instance.exports.sctp_encoder_add_uint32(value);
+  }
+  /**
+   * Adds a 64-bit signed integer to the buffer.
+   * @param {bigint} value
+   */
+  addInt64(value) {
+    this.instance.exports.sctp_encoder_add_int64(value);
+  }
+  /**
+   * Adds a 64-bit unsigned integer to the buffer.
+   * @param {bigint} value
+   */
+  addUint64(value) {
+    this.instance.exports.sctp_encoder_add_uint64(value);
+  }
+  /**
+   * Adds a ULEB128-encoded unsigned integer to the buffer.
+   * @param {bigint} value
+   */
+  addUleb128(value) {
+    this.instance.exports.sctp_encoder_add_uleb128(value);
+  }
+  /**
+   * Adds an SLEB128-encoded signed integer to the buffer.
+   * @param {bigint} value
+   */
+  addSleb128(value) {
+    this.instance.exports.sctp_encoder_add_sleb128(value);
+  }
+  /**
+   * Adds a 32-bit float to the buffer.
+   * @param {number} value
+   */
+  addFloat32(value) {
+    this.instance.exports.sctp_encoder_add_float32(value);
+  }
+  /**
+   * Adds a 64-bit float to the buffer.
+   * @param {number} value
+   */
+  addFloat64(value) {
+    this.instance.exports.sctp_encoder_add_float64(value);
+  }
+  /**
+   * Adds a "short" value (0-15).
+   * @param {number} value
+   */
+  addShort(value) {
+    this.instance.exports.sctp_encoder_add_short(value);
+  }
+  /**
+   * Adds a byte vector to the buffer.
+   * @param {Uint8Array} data The byte array to add.
+   */
+  addVector(data) {
+    const length = data.length;
+    const ptr = this.instance.exports.sctp_encoder_add_vector(length);
+    new Uint8Array(this.memory.buffer, ptr, length).set(data);
+  }
+  /**
+   * Finalizes the encoded data, adds an EOF marker, and returns the resulting buffer.
+   * This method should be called after all data has been added to the encoder.
+   * @returns {Uint8Array} A copy of the encoded data.
+   */
+  build() {
+    if (!this.instance) throw new Error("Encoder not initialized.");
+    this.instance.exports.sctp_encoder_add_eof();
+    return this.getBytes();
+  }
+  /**
+   * Returns the encoded data without an EOF marker.
+   * @returns {Uint8Array} A copy of the encoded data.
+   */
+  getBytes() {
+    if (!this.instance) throw new Error("Encoder not initialized.");
+    const dataPtr = this.instance.exports.sctp_encoder_data();
+    const size = this.instance.exports.sctp_encoder_size();
+    return new Uint8Array(this.memory.buffer, dataPtr, size).slice();
+  }
+};
+async function SctpEncoder() {
+  if (!wasmModule) {
+    wasmModule = await WebAssembly.compile(sctp_mvp_enc_default);
+  }
+  const importObject = {
+    env: {
+      __lea_log: (ptr) => {
+        const mem = new Uint8Array(memory.buffer);
+        let end = ptr;
+        while (mem[end] !== 0) {
+          end++;
+        }
+        const message = new TextDecoder("utf-8").decode(mem.subarray(ptr, end));
+        console.error(`sctp.mvp.enc.wasm: ${message}`);
+      }
+    }
+  };
+  const instance = await WebAssembly.instantiate(wasmModule, importObject);
+  const memory = instance.exports.memory;
+  return new SctpEncoderImpl(instance, memory);
+}
+var sctp_mvp_dec_default = __toBinary("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DQAAAAtBACABIABqNgKgjoCAACABQbCOgIAAagsLkwIBAEGACAuLAkFCT1JUOiB1bGViMTI4IG92ZXJmbG93AEFCT1JUOiBzbGViMTI4IG92ZXJmbG93AEFCT1JUOiB1bmtub3duIHNjdHAgdHlwZQBBQk9SVDogZGVjb2RlciBub3QgaW5pdGlhbGl6ZWQAQUJPUlQ6IHVuZXhwZWN0ZWQgZW5kIG9mIHN0cmVhbSB3aGlsZSByZWFkaW5nIHJhdyBkYXRhAEFCT1JUOiB1bmV4cGVjdGVkIGVuZCBvZiBzdHJlYW0gd2hpbGUgcmVhZGluZyB1bGViMTI4AEFCT1JUOiB1bmV4cGVjdGVkIGVuZCBvZiBzdHJlYW0gd2hpbGUgcmVhZGluZyBzbGViMTI4AADVAQRuYW1lAa0BCgATX19zY3RwX2RhdGFfaGFuZGxlcgEJX19sZWFfbG9nAhFzY3RwX2RlY29kZXJfaW5pdAMQc2N0cF9kZWNvZGVyX3J1bgQHbGVhX2xvZwUaX3NjdHBfZGVjb2Rlcl9yZWFkX3VsZWIxMjgGE19fbGVhX2dldF9oZWFwX2Jhc2UHEl9fbGVhX2dldF9oZWFwX3RvcAgPYWxsb2NhdG9yX3Jlc2V0CQZtYWxsb2MHEgEAD19fc3RhY2tfcG9pbnRlcgkKAQAHLnJvZGF0YQAtCXByb2R1Y2VycwEMcHJvY2Vzc2VkLWJ5AQxEZWJpYW4gY2xhbmcGMTQuMC42");
+var typeMap = {
+  INT8: 0,
+  UINT8: 1,
+  INT16: 2,
+  UINT16: 3,
+  INT32: 4,
+  UINT32: 5,
+  INT64: 6,
+  UINT64: 7,
+  ULEB128: 8,
+  SLEB128: 9,
+  FLOAT32: 10,
+  FLOAT64: 11,
+  SHORT: 12,
+  VECTOR: 13,
+  EOF: 15
+};
+var typeIdToName = Object.fromEntries(Object.entries(typeMap).map(([name, id]) => [id, name]));
+
+// src/system-program.js
+var TransferInstruction = class {
+  #programIndex = null;
+  constructor({ fromPubkeyPairHash, toPubkeyPairHash, amount }) {
+    this.fromPubkeyPairHash = fromPubkeyPairHash;
+    console.log(`TransferInstruction fromPubkeyPairHash:`, fromPubkeyPairHash);
+    this.toPubkeyPairHash = toPubkeyPairHash;
+    this.amount = amount;
+    this.fromPubkeyIndex = null;
+    this.toPubkeyIndex = null;
+  }
+  resolveKeys(keyList) {
+    this.#programIndex = keyList.add(LEA_SYSTEM_PROGRAM);
+    this.fromPubkeyIndex = keyList.add(this.fromPubkeyPairHash);
+    this.toPubkeyIndex = keyList.add(this.toPubkeyPairHash);
+  }
+  get programIndex() {
+    return this.#programIndex;
+  }
+  async toBytes() {
+    if (this.fromPubkeyIndex === null || this.toPubkeyIndex === null) {
+      throw new Error("resolveKeys() must be called before toBytes()");
+    }
+    const encoder = await SctpEncoder();
+    encoder.init(2e3);
+    encoder.addUint8(0);
+    encoder.addShort(this.fromPubkeyIndex);
+    encoder.addUleb128(this.amount);
+    encoder.addShort(this.toPubkeyIndex);
+    return encoder.build();
+  }
+};
+var PublishKeyPairInstruction = class {
+  #programIndex = null;
+  constructor({ address, slhPubKey, eddsaPubKey }) {
+    this.accountPubKeyHash = address.toBytes();
+    this.slhPubKey = slhPubKey;
+    this.eddsaPubKey = eddsaPubKey;
+    this.accountPubKeyIndex = null;
+  }
+  resolveKeys(keyList) {
+    this.#programIndex = keyList.add(LEA_SYSTEM_PROGRAM);
+    this.accountPubKeyIndex = keyList.add(this.accountPubKeyHash);
+  }
+  get programIndex() {
+    return this.#programIndex;
+  }
+  async toBytes() {
+    if (this.accountPubKeyIndex === null) {
+      throw new Error("resolveKeys() must be called before toBytes()");
+    }
+    const encoder = await SctpEncoder();
+    encoder.init(2e3);
+    encoder.addUint8(1);
+    encoder.addShort(this.accountPubKeyIndex);
+    encoder.addVector(this.eddsaPubKey);
+    encoder.addVector(this.slhPubKey);
+    return encoder.build();
+  }
+};
+var RevokeKeyPairInstruction = class {
+  #programIndex = null;
+  constructor({ address }) {
+    this.accountPubKeyHash = address.toBytes();
+    this.accountPubKeyIndex = null;
+  }
+  resolveKeys(keyList) {
+    this.#programIndex = keyList.add(LEA_SYSTEM_PROGRAM);
+    this.accountPubKeyIndex = keyList.add(this.accountPubKeyHash);
+  }
+  get programIndex() {
+    return this.#programIndex;
+  }
+  async toBytes() {
+    if (this.accountPubKeyIndex === null) {
+      throw new Error("resolveKeys() must be called before toBytes()");
+    }
+    const encoder = await SctpEncoder.create();
+    encoder.init(2e3);
+    encoder.addUint8(2);
+    encoder.addShort(this.accountPubKeyIndex);
+    return encoder.build();
+  }
+};
+var SystemProgram = class {
+  static transfer(obj) {
+    return new TransferInstruction(obj);
+  }
+  static publishKeyPair(obj) {
+    return new PublishKeyPairInstruction(obj);
+  }
+  static revokeKeyPair(obj) {
+    return new RevokeKeyPairInstruction(obj);
   }
 };
 
@@ -3122,6 +4171,7 @@ var Transaction = class {
   #keyList = new KeyList();
   #instructions = [];
   #signaturesEd25519 = /* @__PURE__ */ new Map();
+  #signaturesSLHDSA = /* @__PURE__ */ new Map();
   constructor() {
     this.#keyList.add(recentBlockhashPlaceHolder);
   }
@@ -3129,25 +4179,38 @@ var Transaction = class {
     instruction.resolveKeys(this.#keyList);
     this.#instructions.push(instruction);
   }
-  addSig(publicKey, signature) {
+  addEdDsaSig(publicKey, signature) {
     const pubkeyIndex = this.#keyList.hasKey(publicKey);
+    if (!(signature instanceof Uint8Array)) {
+      throw new Error("Invalid signature: must be a Uint8Array");
+    }
     if (typeof pubkeyIndex === "number") {
       this.#signaturesEd25519.set(pubkeyIndex, signature);
     } else {
-      throw new Error("Public key missing for transaction signature");
+      throw new Error("Address missing for transaction signature");
     }
-    if (!(signature instanceof Uint8Array) || signature.length !== 64) {
-      throw new Error("Invalid Ed25519 signature: must be a Uint8Array(64)");
+  }
+  addSlhDsaSig(address, signature) {
+    const pubkeyIndex = this.#keyList.hasKey(address);
+    if (!(signature instanceof Uint8Array)) {
+      throw new Error("Invalid signature: must be a Uint8Array");
+    }
+    if (typeof pubkeyIndex === "number") {
+      this.#signaturesSLHDSA.set(pubkeyIndex, signature);
+    } else {
+      throw new Error("Signer address missing for transaction signature");
     }
   }
   async sign(signer) {
-    if (!(signer instanceof KeypairImpl)) {
-      throw new TypeError("Expected an instance of KeypairImpl");
+    if (this.#keyList.hasKey(signer.address) === void 0) {
+      this.#keyList.add(signer.address);
     }
     const encoder = await this.serializeWithoutSignatures();
-    const unsignedTransaction = encoder.getEncodedData();
-    const signature = await signer.sign(unsignedTransaction);
-    this.addSig(signer.publicKey, signature);
+    const unsignedTransaction = encoder.getBytes();
+    const edDsaSignature = await signer.edDsa.sign(unsignedTransaction);
+    this.addEdDsaSig(signer.address, edDsaSignature);
+    const slhDsaSignature = await signer.slhDsa.sign(unsignedTransaction);
+    this.addSlhDsaSig(signer.address, slhDsaSignature);
   }
   set recentBlockhash(blockHash) {
     if (typeof blockHash === "string") {
@@ -3159,13 +4222,25 @@ var Transaction = class {
     }
   }
   async serializeWithoutSignatures() {
-    const encoder = await CteEncoder.create(2e3);
-    encoder.addPublicKeyList(this.#keyList.getKeys(), CTE_CRYPTO_TYPE_ED25519);
-    encoder.addIxDataIndexReference(this.#instructions.length);
+    const encoder = await SctpEncoder();
+    encoder.init(MAX_TRANSACTION_SIZE);
+    const keys = this.#keyList.getKeys();
+    const rawKeys = keys.map((key) => {
+      if (key instanceof PublicKey || key instanceof SLHPublicKey) {
+        return key.toBytes();
+      }
+      if (key instanceof Address) {
+        return key.publicKeyPairHash;
+      }
+      return key;
+    });
+    encoder.addShort(1);
+    encoder.addVector(combineUint8Arrays(rawKeys));
+    encoder.addShort(this.#instructions.length);
     const encoded = [];
     for (const ix of this.#instructions) {
-      encoder.addIxDataIndexReference(ix.programIndex);
-      encoder.addCommandData(await ix.toBytes());
+      encoder.addShort(ix.programIndex);
+      encoder.addVector(await ix.toBytes());
     }
     return encoder;
   }
@@ -3173,221 +4248,43 @@ var Transaction = class {
     const encoder = await this.serializeWithoutSignatures();
     if (this.#signaturesEd25519.size > 0) {
       for (const [pubkeyIndex, signature] of this.#signaturesEd25519.entries()) {
-        encoder.addSignatureList([signature], CTE_CRYPTO_TYPE_ED25519);
-        encoder.addIxDataIndexReference(pubkeyIndex);
+        encoder.addVector(signature);
+        encoder.addShort(pubkeyIndex);
       }
     }
-    return encoder.getEncodedData();
+    if (this.#signaturesSLHDSA.size > 0) {
+      for (const [pubkeyIndex, signature] of this.#signaturesSLHDSA.entries()) {
+        encoder.addVector(signature);
+        encoder.addShort(pubkeyIndex);
+      }
+    }
+    return encoder.build();
   }
 };
-
-// src/transactionDecoder.js
-var LEA_SYSTEM_PROGRAM_ID = new PublicKey(LEA_SYSTEM_PROGRAM);
-async function decodeSystemProgramTransferInstruction(commandData, keyList) {
-  const instructionDecoder = await CteDecoder.create(commandData);
-  let decodedInstructionData;
-  try {
-    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-      throw new Error("SystemProgram Transfer: Expected action code (IxData).");
-    }
-    const actionCode = instructionDecoder.readIxDataUint8();
-    if (actionCode !== 0) {
-      throw new Error(`SystemProgram Transfer: Unexpected action code ${actionCode}. Expected 0.`);
-    }
-    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-      throw new Error("SystemProgram Transfer: Expected fromPubkey index (IxData).");
-    }
-    const fromIndex = instructionDecoder.readIxDataIndexReference();
-    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-      throw new Error("SystemProgram Transfer: Expected amount (IxData ULEB128).");
-    }
-    const amount = instructionDecoder.readIxDataUleb128();
-    if (instructionDecoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-      throw new Error("SystemProgram Transfer: Expected toPubkey index (IxData).");
-    }
-    const toIndex = instructionDecoder.readIxDataIndexReference();
-    if (fromIndex >= keyList.length || toIndex >= keyList.length) {
-      throw new Error(`SystemProgram Transfer: Invalid key index. FromIndex: ${fromIndex}, ToIndex: ${toIndex}, KeyList length: ${keyList.length}`);
-    }
-    if (instructionDecoder.peekTag() !== null) {
-      console.warn("SystemProgram Transfer: Trailing data found in instruction commandData.");
-    }
-    decodedInstructionData = {
-      fromPubkey: keyList[fromIndex],
-      // PublicKey object
-      toPubkey: keyList[toIndex],
-      // PublicKey object
-      amount
-    };
-  } finally {
-    instructionDecoder.destroy();
-  }
-  return decodedInstructionData;
-}
-async function decodeTransaction(encodedBytes) {
-  if (!(encodedBytes instanceof Uint8Array)) {
-    throw new TypeError("encodedBytes must be a Uint8Array.");
-  }
-  const decoder = await CteDecoder.create(encodedBytes);
-  const decodedTx = {
-    recentBlockhash: null,
-    // This will be a hex string
-    keyList: [],
-    rawKeyListBytes: [],
-    instructions: [],
-    signatures: [],
-    rawUnsignedDataForVerification: null
-  };
-  let unsignedDataEncoder;
-  try {
-    if (decoder.peekTag() !== CTE_TAG_PUBLIC_KEY_LIST) {
-      throw new Error("Transaction does not start with a Public Key List.");
-    }
-    const pkListInfo = decoder.peekPublicKeyListInfo();
-    if (!pkListInfo) {
-      throw new Error("Failed to peek Public Key List info.");
-    }
-    if (pkListInfo.typeCode !== CTE_CRYPTO_TYPE_ED25519) {
-      throw new Error(`Expected Ed25519 public key list (type ${CTE_CRYPTO_TYPE_ED25519}), got ${pkListInfo.typeCode}.`);
-    }
-    const publicKeyData = decoder.readPublicKeyListData();
-    if (!publicKeyData) {
-      throw new Error("Failed to read Public Key List data.");
-    }
-    for (let i = 0; i < publicKeyData.length; i += CTE_PUBKEY_SIZE_ED25519) {
-      decodedTx.rawKeyListBytes.push(publicKeyData.slice(i, i + CTE_PUBKEY_SIZE_ED25519));
-    }
-    decodedTx.keyList = decodedTx.rawKeyListBytes.map((pkBytes) => new PublicKey(pkBytes));
-    if (decodedTx.rawKeyListBytes.length > 0 && decodedTx.rawKeyListBytes[0]) {
-      decodedTx.recentBlockhash = bytesToHex(decodedTx.rawKeyListBytes[0]);
-    } else {
-      throw new Error("Public key list is empty or first element is invalid, cannot determine recentBlockhash.");
-    }
-    unsignedDataEncoder = await CteEncoder.create(encodedBytes.length + 512);
-    unsignedDataEncoder.addPublicKeyList(decodedTx.rawKeyListBytes, CTE_CRYPTO_TYPE_ED25519);
-    if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-      throw new Error("Expected instruction count (IxData) after public key list.");
-    }
-    const numInstructions = decoder.readIxDataIndexReference();
-    unsignedDataEncoder.addIxDataIndexReference(numInstructions);
-    for (let i = 0; i < numInstructions; i++) {
-      if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-        throw new Error(`Expected program index (IxData) for instruction ${i}.`);
-      }
-      const programIndexInKeyList = decoder.readIxDataIndexReference();
-      unsignedDataEncoder.addIxDataIndexReference(programIndexInKeyList);
-      if (programIndexInKeyList >= decodedTx.keyList.length || programIndexInKeyList < 0) {
-        throw new Error(`Invalid programIndexInKeyList ${programIndexInKeyList} for instruction ${i}. KeyList length: ${decodedTx.keyList.length}`);
-      }
-      const programIdBytes = decodedTx.rawKeyListBytes[programIndexInKeyList];
-      if (!programIdBytes) {
-        throw new Error(`Program ID bytes not found at index ${programIndexInKeyList} for instruction ${i}.`);
-      }
-      if (decoder.peekTag() !== CTE_TAG_COMMAND_DATA) {
-        throw new Error(`Expected command data for instruction ${i}.`);
-      }
-      const commandDataPayloadObj = decoder.readCommandDataPayload();
-      if (!commandDataPayloadObj) {
-        throw new Error(`Failed to read command data payload for instruction ${i}.`);
-      }
-      const commandData = commandDataPayloadObj.data;
-      unsignedDataEncoder.addCommandData(commandData);
-      const currentProgramIdObject = decodedTx.keyList[programIndexInKeyList];
-      const instruction = {
-        programId: bytesToHex(programIdBytes),
-        programIndexInKeyList,
-        rawData: commandData,
-        type: "unknown"
-      };
-      if (currentProgramIdObject && currentProgramIdObject.equals(LEA_SYSTEM_PROGRAM_ID)) {
-        try {
-          const parsedDetails = await decodeSystemProgramTransferInstruction(commandData, decodedTx.keyList);
-          instruction.type = "transfer";
-          instruction.fromPubkey = parsedDetails.fromPubkey;
-          instruction.toPubkey = parsedDetails.toPubkey;
-          instruction.amount = parsedDetails.amount;
-        } catch (e) {
-          instruction.type = "system_program_parse_error";
-          instruction.parseError = e.message;
-        }
-      }
-      decodedTx.instructions.push(instruction);
-    }
-    decodedTx.rawUnsignedDataForVerification = unsignedDataEncoder.getEncodedData();
-    while (decoder.peekTag() === CTE_TAG_SIGNATURE_LIST) {
-      const sigListInfo = decoder.peekSignatureListInfo();
-      if (!sigListInfo) {
-        throw new Error("Failed to peek Signature List info.");
-      }
-      if (sigListInfo.typeCode !== CTE_CRYPTO_TYPE_ED25519 || sigListInfo.count !== 1) {
-        throw new Error(`Invalid signature block format. Expected single Ed25519 signature (type ${CTE_CRYPTO_TYPE_ED25519}, count 1), got type ${sigListInfo.typeCode}, count ${sigListInfo.count}.`);
-      }
-      const signatureBytes = decoder.readSignatureListData();
-      if (!signatureBytes) {
-        throw new Error("Failed to read Signature List data.");
-      }
-      if (decoder.peekTag() !== CTE_TAG_IXDATA_FIELD) {
-        throw new Error("Expected signer public key index (IxData) after signature.");
-      }
-      const signerPubkeyIndex = decoder.readIxDataIndexReference();
-      if (signerPubkeyIndex >= decodedTx.keyList.length || signerPubkeyIndex < 0) {
-        throw new Error(`Invalid signer public key index ${signerPubkeyIndex}, keyList has ${decodedTx.keyList.length} keys.`);
-      }
-      const signerPublicKey = decodedTx.keyList[signerPubkeyIndex];
-      if (!signerPublicKey) {
-        throw new Error(`Signer public key not found at index ${signerPubkeyIndex}.`);
-      }
-      let isValid = false;
-      try {
-        isValid = await signerPublicKey.verify(decodedTx.rawUnsignedDataForVerification, signatureBytes);
-      } catch (e) {
-        console.error(`Error during signature verification for PK index ${signerPubkeyIndex} (${signerPublicKey.toString()}):`, e);
-        isValid = false;
-      }
-      decodedTx.signatures.push({
-        signature: signatureBytes,
-        signerPublicKey,
-        signerPubkeyIndex,
-        isValid
-      });
-    }
-    if (decoder.peekTag() !== null) {
-      console.warn("Warning: Trailing data found in transaction after expected fields. Tag:", decoder.peekTag());
-    }
-    return decodedTx;
-  } catch (error) {
-    console.error("Error during transaction decoding:", error);
-    if (decoder && typeof decoder.destroy === "function") {
-      decoder.destroy();
-    }
-    if (unsignedDataEncoder && typeof unsignedDataEncoder.destroy === "function") {
-      unsignedDataEncoder.destroy();
-    }
-    throw error;
-  } finally {
-    if (decoder && typeof decoder.destroy === "function") {
-      decoder.destroy();
-    }
-    if (unsignedDataEncoder && typeof unsignedDataEncoder.destroy === "function") {
-      unsignedDataEncoder.destroy();
-    }
-  }
-}
 export {
+  ADDRESS_BYTE_LENGTH,
   ADDRESS_HRP,
+  Address,
+  BIP44_PURPOSE,
+  CTE_CRYPTO_TYPE_ED25519,
+  CTE_CRYPTO_TYPE_SLHDSA,
   Connection,
-  DEFAULT_ACCOUNT_DERIVATION_BASE,
+  ED25519_DERIVATION_BASE,
   KeyList,
   Keypair,
   LEA_COIN_TYPE,
   LEA_SYSTEM_PROGRAM,
+  MAX_TRANSACTION_SIZE,
   PublicKey,
+  SLHDSA_DERIVATION_BASE,
+  SLHDSA_PQC_PURPOSE,
+  SLHKeypair,
   SystemProgram,
   Transaction,
   Wallet,
   areUint8ArraysEqual,
   bytesToHex,
-  decodeTransaction,
+  combineUint8Arrays,
   generateMnemonic,
   hexToBytes,
   randomBytes,
@@ -3400,5 +4297,18 @@ export {
 
 @noble/hashes/esm/utils.js:
   (*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) *)
+
+@noble/post-quantum/esm/utils.js:
+  (*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) *)
+
+@noble/post-quantum/esm/slh-dsa.js:
+  (*! noble-post-quantum - MIT License (c) 2024 Paul Miller (paulmillr.com) *)
+
+hash-wasm/dist/index.esm.js:
+  (*!
+   * hash-wasm (https://www.npmjs.com/package/hash-wasm)
+   * (c) Dani Biro
+   * @license MIT
+   *)
 */
 //# sourceMappingURL=lea-wallet.web.js.map

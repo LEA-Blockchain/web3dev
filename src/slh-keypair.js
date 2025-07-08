@@ -1,5 +1,5 @@
 import { slh_dsa_sha2_256s as algorithm } from '@noble/post-quantum/slh-dsa';
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from './utils.js';
 import { SLHPublicKey } from './slh-public.js';
 import { blake3 } from "hash-wasm";
 
