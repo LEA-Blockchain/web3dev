@@ -109,8 +109,8 @@ var require_index_umd = __commonJS({
       function intArrayToString(arr, len) {
         return String.fromCharCode(...arr.subarray(0, len));
       }
-      function hexCharCodesToInt(a, b) {
-        return (a & 15) + (a >> 6 | a >> 3 & 8) << 4 | (b & 15) + (b >> 6 | b >> 3 & 8);
+      function hexCharCodesToInt(a2, b) {
+        return (a2 & 15) + (a2 >> 6 | a2 >> 3 & 8) << 4 | (b & 15) + (b >> 6 | b >> 3 & 8);
       }
       function writeHexToUInt8(buf, str) {
         const size = str.length >> 1;
@@ -181,18 +181,18 @@ var require_index_umd = __commonJS({
         }
         if (extraBytes === 1) {
           const tmp = data2[len - 1];
-          const a = base64Chars.charAt(tmp >> 2);
+          const a2 = base64Chars.charAt(tmp >> 2);
           const b = base64Chars.charAt(tmp << 4 & 63);
-          parts.push(`${a}${b}`);
+          parts.push(`${a2}${b}`);
           if (pad) {
             parts.push("==");
           }
         } else if (extraBytes === 2) {
           const tmp = (data2[len - 2] << 8) + data2[len - 1];
-          const a = base64Chars.charAt(tmp >> 10);
+          const a2 = base64Chars.charAt(tmp >> 10);
           const b = base64Chars.charAt(tmp >> 4 & 63);
           const c = base64Chars.charAt(tmp << 2 & 63);
-          parts.push(`${a}${b}${c}`);
+          parts.push(`${a2}${b}${c}`);
           if (pad) {
             parts.push("=");
           }
@@ -2390,15 +2390,15 @@ var err = (m = "") => {
   throw new Error(m);
 };
 var isS = (s) => typeof s === "string";
-var isu8 = (a) => a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array";
-var au8 = (a, l) => (
+var isu8 = (a2) => a2 instanceof Uint8Array || ArrayBuffer.isView(a2) && a2.constructor.name === "Uint8Array";
+var au8 = (a2, l) => (
   // is Uint8Array (of specific length)
-  !isu8(a) || typeof l === "number" && l > 0 && a.length !== l ? err("Uint8Array of valid length expected") : a
+  !isu8(a2) || typeof l === "number" && l > 0 && a2.length !== l ? err("Uint8Array of valid length expected") : a2
 );
 var u8n = (data) => new Uint8Array(data);
-var toU8 = (a, len) => au8(isS(a) ? h2b(a) : u8n(au8(a)), len);
-var M = (a, b = P) => {
-  let r = a % b;
+var toU8 = (a2, len) => au8(isS(a2) ? h2b(a2) : u8n(au8(a2)), len);
+var M = (a2, b = P) => {
+  let r = a2 % b;
   return r >= 0n ? r : b + r;
 };
 var isPoint = (p) => p instanceof Point ? p : err("Point expected");
@@ -2462,11 +2462,11 @@ var Point = class _Point {
   /** Point doubling. Complete formula. */
   double() {
     const { ex: X1, ey: Y1, ez: Z1 } = this;
-    const { a } = CURVE;
+    const { a: a2 } = CURVE;
     const A = M(X1 * X1);
     const B = M(Y1 * Y1);
     const C2 = M(2n * M(Z1 * Z1));
-    const D = M(a * A);
+    const D = M(a2 * A);
     const x1y1 = X1 + Y1;
     const E = M(M(x1y1 * x1y1) - A - B);
     const G2 = D + B;
@@ -2482,7 +2482,7 @@ var Point = class _Point {
   add(other) {
     const { ex: X1, ey: Y1, ez: Z1, et: T1 } = this;
     const { ex: X2, ey: Y2, ez: Z2, et: T2 } = isPoint(other);
-    const { a, d } = CURVE;
+    const { a: a2, d } = CURVE;
     const A = M(X1 * X2);
     const B = M(Y1 * Y2);
     const C2 = M(T1 * d * T2);
@@ -2490,7 +2490,7 @@ var Point = class _Point {
     const E = M((X1 + Y1) * (X2 + Y2) - A - B);
     const F = M(D - C2);
     const G2 = M(D + C2);
-    const H = M(B - a * A);
+    const H = M(B - a2 * A);
     const X3 = M(E * F);
     const Y3 = M(G2 * H);
     const T3 = M(E * H);
@@ -2589,22 +2589,22 @@ var h2b = (hex) => {
 var n2b_32LE = (num) => h2b(padh(num, 32 * 2)).reverse();
 var b2n_LE = (b) => BigInt("0x" + b2h(u8n(au8(b)).reverse()));
 var concatB = (...arrs) => {
-  const r = u8n(arrs.reduce((sum, a) => sum + au8(a).length, 0));
+  const r = u8n(arrs.reduce((sum, a2) => sum + au8(a2).length, 0));
   let pad = 0;
-  arrs.forEach((a) => {
-    r.set(a, pad);
-    pad += a.length;
+  arrs.forEach((a2) => {
+    r.set(a2, pad);
+    pad += a2.length;
   });
   return r;
 };
 var invert = (num, md) => {
   if (num === 0n || md <= 0n)
     err("no inverse n=" + num + " mod=" + md);
-  let a = M(num, md), b = md, x = 0n, y = 1n, u = 1n, v = 0n;
-  while (a !== 0n) {
-    const q = b / a, r = b % a;
+  let a2 = M(num, md), b = md, x = 0n, y = 1n, u = 1n, v = 0n;
+  while (a2 !== 0n) {
+    const q = b / a2, r = b % a2;
     const m = x - u * q, n = y - v * q;
-    b = a, a = r, x = u, y = v, u = m, v = n;
+    b = a2, a2 = r, x = u, y = v, u = m, v = n;
   }
   return b === 1n ? M(x, md) : err("no inverse");
 };
@@ -2810,8 +2810,8 @@ import * as nc from "node:crypto";
 var crypto = nc && typeof nc === "object" && "webcrypto" in nc ? nc.webcrypto : nc && typeof nc === "object" && "randomBytes" in nc ? nc : void 0;
 
 // node_modules/@noble/hashes/esm/utils.js
-function isBytes(a) {
-  return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array";
+function isBytes(a2) {
+  return a2 instanceof Uint8Array || ArrayBuffer.isView(a2) && a2.constructor.name === "Uint8Array";
 }
 function anumber(n) {
   if (!Number.isSafeInteger(n) || n < 0)
@@ -2936,15 +2936,15 @@ function kdfInputToBytes(data) {
 function concatBytes(...arrays) {
   let sum = 0;
   for (let i = 0; i < arrays.length; i++) {
-    const a = arrays[i];
-    abytes(a);
-    sum += a.length;
+    const a2 = arrays[i];
+    abytes(a2);
+    sum += a2.length;
   }
   const res = new Uint8Array(sum);
   for (let i = 0, pad = 0; i < arrays.length; i++) {
-    const a = arrays[i];
-    res.set(a, pad);
-    pad += a.length;
+    const a2 = arrays[i];
+    res.set(a2, pad);
+    pad += a2.length;
   }
   return res;
 }
@@ -3063,11 +3063,11 @@ function setBigUint64(view, byteOffset, value, isLE2) {
   view.setUint32(byteOffset + h, wh, isLE2);
   view.setUint32(byteOffset + l, wl, isLE2);
 }
-function Chi(a, b, c) {
-  return a & b ^ ~a & c;
+function Chi(a2, b, c) {
+  return a2 & b ^ ~a2 & c;
 }
-function Maj(a, b, c) {
-  return a & b ^ a & c ^ b & c;
+function Maj(a2, b, c) {
+  return a2 & b ^ a2 & c ^ b & c;
 }
 var HashMD = class extends Hash {
   constructor(blockLen, outputLen, padOffset, isLE2) {
@@ -4703,17 +4703,17 @@ var shake256 = /* @__PURE__ */ (() => genShake(31, 136, 256 / 8))();
 // node_modules/@noble/post-quantum/esm/utils.js
 var ensureBytes2 = abytes;
 var randomBytes2 = randomBytes;
-function equalBytes(a, b) {
-  if (a.length !== b.length)
+function equalBytes(a2, b) {
+  if (a2.length !== b.length)
     return false;
   let diff = 0;
-  for (let i = 0; i < a.length; i++)
-    diff |= a[i] ^ b[i];
+  for (let i = 0; i < a2.length; i++)
+    diff |= a2[i] ^ b[i];
   return diff === 0;
 }
 function splitCoder(...lengths) {
   const getLength = (c) => typeof c === "number" ? c : c.bytesLen;
-  const bytesLen = lengths.reduce((sum, a) => sum + getLength(a), 0);
+  const bytesLen = lengths.reduce((sum, a2) => sum + getLength(a2), 0);
   return {
     bytesLen,
     encode: (bufs) => {
@@ -4759,11 +4759,11 @@ function vecCoder(c, vecLen) {
       }
       return res;
     },
-    decode: (a) => {
-      ensureBytes2(a, bytesLen);
+    decode: (a2) => {
+      ensureBytes2(a2, bytesLen);
       const r = [];
-      for (let i = 0; i < a.length; i += c.bytesLen)
-        r.push(c.decode(a.subarray(i, i + c.bytesLen)));
+      for (let i = 0; i < a2.length; i += c.bytesLen)
+        r.push(c.decode(a2.subarray(i, i + c.bytesLen)));
       return r;
     }
   };
@@ -5038,13 +5038,13 @@ function gen2(opts, hashOpts) {
     idxOffset >>>= 1;
     for (let i = 0; i < treeHeight - 1; i++, leafIdx >>= 1, idxOffset >>= 1) {
       setAddr({ height: i + 1, index: leafIdx + idxOffset }, addr);
-      const a = authPath.subarray((i + 1) * N2, (i + 2) * N2);
+      const a2 = authPath.subarray((i + 1) * N2, (i + 2) * N2);
       if ((leafIdx & 1) !== 0) {
         b1.set(context.thashN(2, buffer, addr));
-        b0.set(a);
+        b0.set(a2);
       } else {
         buffer.set(context.thashN(2, buffer, addr));
-        b1.set(a);
+        b1.set(a2);
       }
     }
     setAddr({ height: treeHeight, index: leafIdx + idxOffset }, addr);
@@ -5322,13 +5322,13 @@ var slh_dsa_sha2_256f = /* @__PURE__ */ gen2(PARAMS["256f"], SHA512_SIMPLE);
 var slh_dsa_sha2_256s = /* @__PURE__ */ gen2(PARAMS["256s"], SHA512_SIMPLE);
 
 // src/utils.js
-function areUint8ArraysEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b || a.length !== b.length || !(a instanceof Uint8Array) || !(b instanceof Uint8Array)) {
+function areUint8ArraysEqual(a2, b) {
+  if (a2 === b) return true;
+  if (!a2 || !b || a2.length !== b.length || !(a2 instanceof Uint8Array) || !(b instanceof Uint8Array)) {
     return false;
   }
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
+  for (let i = 0; i < a2.length; i++) {
+    if (a2[i] !== b[i]) return false;
   }
   return true;
 }
@@ -5438,6 +5438,32 @@ var KeyList = class {
 };
 function combineUint8Arrays(arrays) {
   return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
+}
+function uint8ArrayToBase64(uint8Array) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(uint8Array).toString("base64");
+  } else {
+    let binary = "";
+    const len = uint8Array.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    return btoa(binary);
+  }
+}
+function base64ToUint8Array(base64String) {
+  if (typeof Buffer !== "undefined") {
+    const buf = Buffer.from(base64String, "base64");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
+  } else {
+    const binaryString = atob(base64String);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  }
 }
 
 // src/slh-public.js
@@ -5579,179 +5605,6 @@ var Address = class {
     return this.publicKeyPairHash;
   }
 };
-
-// src/wallet.js
-var WalletImpl = class {
-  #masterKey;
-  constructor(masterKey) {
-    if (!(masterKey instanceof HDKey)) {
-      throw new Error("Invalid masterKey provided.");
-    }
-    this.#masterKey = masterKey;
-  }
-  /** Derives an Ed25519 Keypair using a BIP-44 path. */
-  deriveAccountEdDsa(index) {
-    try {
-      const derivedHDKey = this.#masterKey.derive(`${ED25519_DERIVATION_BASE}/${index}'`);
-      return Keypair.fromSecretKey(derivedHDKey.privateKey);
-    } catch (error) {
-      throw new Error(`Failed to derive EdDSA account for path ${index}: ${error.message}`);
-    }
-  }
-  /**
-   * Derives a post-quantum (SLH-DSA) Keypair.
-   * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
-   */
-  async getAccountSlhDsa(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const path = `${SLHDSA_DERIVATION_BASE}/${index}'`;
-    try {
-      const derivedHDKey = this.#masterKey.derive(path);
-      const pqcSeed = derivedHDKey.privateKey;
-      return await SLHKeypair.fromSecretKey(pqcSeed);
-    } catch (error) {
-      throw new Error(`Failed to derive SLH-DSA account for path ${path}: ${error.message}`);
-    }
-  }
-  /**
-   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
-  * and derives a unified address from both public keys.
-  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
-  */
-  async getAccount(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const edDsa = this.deriveAccountEdDsa(index);
-    const slhDsa = await this.getAccountSlhDsa(index);
-    const edPublicKeyBytes = edDsa.publicKey.toBytes();
-    const slhPublicKeyBytes = slhDsa.publicKey.toBytes();
-    const blake3Hasher = await (0, import_hash_wasm2.createBLAKE3)(ADDRESS_BYTE_LENGTH * 8);
-    blake3Hasher.update(edPublicKeyBytes);
-    blake3Hasher.update(slhPublicKeyBytes);
-    const publicKeyPairHash = blake3Hasher.digest("binary");
-    const address = new Address(publicKeyPairHash);
-    return {
-      edDsa,
-      slhDsa,
-      publicKeyPairHash,
-      address
-    };
-  }
-  /**
-   * Exports the raw Ed25519 private key for an account. Use with caution.
-   * @param {number} index - The hardened account index.
-   */
-  exportPrivateKey(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const path = `${ED25519_DERIVATION_BASE}/${index}'`;
-    try {
-      const derivedHDKey = this.#masterKey.derive(path);
-      return Uint8Array.from(derivedHDKey.privateKey);
-    } catch (error) {
-      throw new Error(`Failed to export private key for index ${index}: ${error.message}`);
-    }
-  }
-};
-var Wallet = {
-  /**
-   * Creates a wallet from a BIP-39 mnemonic phrase.
-   * @param {string} mnemonic - The seed phrase.
-   * @param {string} [passphrase] - Optional BIP-39 passphrase.
-   */
-  fromMnemonic: (mnemonic, passphrase) => {
-    const seed = mnemonicToSeed(mnemonic, passphrase);
-    const masterKey = HDKey.fromMasterSeed(seed);
-    return new WalletImpl(masterKey);
-  }
-};
-
-// src/connection.js
-var ConnectionImpl = class {
-  constructor(cluster = "devnet") {
-    this.url = this._resolveClusterUrl(cluster);
-  }
-  _resolveClusterUrl(cluster) {
-    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) {
-      return cluster;
-    }
-    const clusterUrls = {
-      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
-      devnet: "https://api.devnet.getlea.org",
-      testnet: "https://api.testnet.getlea.org",
-      local: "http://localhost:3000",
-      localhost: "http://localhost:3000"
-    };
-    if (!clusterUrls[cluster]) {
-      throw new Error(`Unknown cluster: ${cluster}`);
-    }
-    return clusterUrls[cluster];
-  }
-  async _sendRequest(method, params) {
-    const requestBody = {
-      jsonrpc: "1.0",
-      id: 1,
-      method
-    };
-    if (params !== void 0) {
-      requestBody.params = params;
-    }
-    const response = await fetch(this.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // is not kept alive and reused for the next request.
-        // PQC signatutres take a long time to compute, so we want to avoid broken pipe
-        "Connection": "close"
-      },
-      body: JSON.stringify(requestBody)
-    });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(`RPC error: ${data.error.message} (Code: ${data.error.code})`);
-    }
-    if (data.result === void 0) {
-      throw new Error(`Malformed response: Missing 'result' field.`);
-    }
-    return data.result;
-  }
-  // --- Public API Methods ---
-  getVersion() {
-    return this._sendRequest("getVersion");
-  }
-  getLatestBlockhash() {
-    return this._sendRequest("getLatestBlockhash");
-  }
-  getBalance(keys) {
-    return this._sendRequest("getBalance", keys);
-  }
-  getTransaction(id) {
-    return this._sendRequest("getTransaction", [id]);
-  }
-  getTransactionsForAccount(opts) {
-    return this._sendRequest("getTransactionsForAccount", [opts]);
-  }
-  sendTransaction(txInput) {
-    let paramsForServer;
-    if (typeof txInput === "string") {
-      paramsForServer = [txInput];
-    } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === "string") {
-      paramsForServer = txInput;
-    } else {
-      return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
-    }
-    return this._sendRequest("sendTransaction", paramsForServer);
-  }
-};
-var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
 
 // node_modules/@leachain/sctp/dist/sctp.node.mjs
 var __toBinaryNode = (base64) => new Uint8Array(Buffer.from(base64, "base64"));
@@ -5936,6 +5789,221 @@ var typeMap = {
   EOF: 15
 };
 var typeIdToName = Object.fromEntries(Object.entries(typeMap).map(([name, id]) => [id, name]));
+
+// src/authToken.js
+var AuthTokenGenerator = class {
+  // Private class fields to hold the cryptographic key pairs
+  #edDsa;
+  #slhDsa;
+  /**
+   * Constructs an instance of the AuthTokenGenerator.
+   * @param {{ edDsa: SigningKeyPair, slhDsa: KeyPair }} keys - The cryptographic keys.
+   * @param {SigningKeyPair} keys.edDsa - The ED-DSA key pair for signing the token.
+   * @param {KeyPair} keys.slhDsa - The SLH-DSA key pair whose public key is included in the token.
+   */
+  constructor(edDsa, slhDsa) {
+    if (!edDsa || !slhDsa) {
+      a;
+      throw new Error("ED-DSA and SLH-DSA key pairs must be provided.");
+    }
+    this.#edDsa = edDsa;
+    this.#slhDsa = slhDsa;
+  }
+  /**
+   * Generates a new authentication token.
+   * @param {number} [ttl_seconds=360] - The time-to-live for the token in seconds. Defaults to 360 seconds (6 minutes).
+   * @returns {Promise<Uint8Array>} A promise that resolves with the generated token as a Uint8Array.
+   */
+  async generate(ttl_seconds = 360) {
+    const encoder = await SctpEncoder();
+    encoder.init(2e3);
+    encoder.addUint8(16);
+    const creationTimestamp = Math.floor(Date.now() / 1e3);
+    const expirationTimestamp = creationTimestamp + ttl_seconds;
+    encoder.addVector(this.#edDsa.publicKey.toBytes());
+    encoder.addVector(this.#slhDsa.publicKey.toBytes());
+    encoder.addUleb128(BigInt(expirationTimestamp));
+    const payloadToSign = encoder.getBytes();
+    const signature = await this.#edDsa.sign(payloadToSign);
+    encoder.addVector(signature);
+    const token = encoder.build();
+    return uint8ArrayToBase64(token);
+  }
+};
+
+// src/wallet.js
+var WalletImpl = class {
+  #masterKey;
+  constructor(masterKey) {
+    if (!(masterKey instanceof HDKey)) {
+      throw new Error("Invalid masterKey provided.");
+    }
+    this.#masterKey = masterKey;
+  }
+  /** Derives an Ed25519 Keypair using a BIP-44 path. */
+  deriveAccountEdDsa(index) {
+    try {
+      const derivedHDKey = this.#masterKey.derive(`${ED25519_DERIVATION_BASE}/${index}'`);
+      return Keypair.fromSecretKey(derivedHDKey.privateKey);
+    } catch (error) {
+      throw new Error(`Failed to derive EdDSA account for path ${index}: ${error.message}`);
+    }
+  }
+  /**
+   * Derives a post-quantum (SLH-DSA) Keypair.
+   * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+   */
+  async getAccountSlhDsa(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const path = `${SLHDSA_DERIVATION_BASE}/${index}'`;
+    try {
+      const derivedHDKey = this.#masterKey.derive(path);
+      const pqcSeed = derivedHDKey.privateKey;
+      return await SLHKeypair.fromSecretKey(pqcSeed);
+    } catch (error) {
+      throw new Error(`Failed to derive SLH-DSA account for path ${path}: ${error.message}`);
+    }
+  }
+  /**
+   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
+  * and derives a unified address from both public keys.
+  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+  */
+  async getAccount(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const edDsa = this.deriveAccountEdDsa(index);
+    const slhDsa = await this.getAccountSlhDsa(index);
+    const edPublicKeyBytes = edDsa.publicKey.toBytes();
+    const slhPublicKeyBytes = slhDsa.publicKey.toBytes();
+    const blake3Hasher = await (0, import_hash_wasm2.createBLAKE3)(ADDRESS_BYTE_LENGTH * 8);
+    blake3Hasher.update(edPublicKeyBytes);
+    blake3Hasher.update(slhPublicKeyBytes);
+    const publicKeyPairHash = blake3Hasher.digest("binary");
+    const address = new Address(publicKeyPairHash);
+    return {
+      edDsa,
+      slhDsa,
+      publicKeyPairHash,
+      address,
+      authToken: new AuthTokenGenerator(edDsa, slhDsa)
+    };
+  }
+  /**
+   * Exports the raw Ed25519 private key for an account. Use with caution.
+   * @param {number} index - The hardened account index.
+   */
+  exportPrivateKey(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const path = `${ED25519_DERIVATION_BASE}/${index}'`;
+    try {
+      const derivedHDKey = this.#masterKey.derive(path);
+      return Uint8Array.from(derivedHDKey.privateKey);
+    } catch (error) {
+      throw new Error(`Failed to export private key for index ${index}: ${error.message}`);
+    }
+  }
+};
+var Wallet = {
+  /**
+   * Creates a wallet from a BIP-39 mnemonic phrase.
+   * @param {string} mnemonic - The seed phrase.
+   * @param {string} [passphrase] - Optional BIP-39 passphrase.
+   */
+  fromMnemonic: (mnemonic, passphrase) => {
+    const seed = mnemonicToSeed(mnemonic, passphrase);
+    const masterKey = HDKey.fromMasterSeed(seed);
+    return new WalletImpl(masterKey);
+  }
+};
+
+// src/connection.js
+var ConnectionImpl = class {
+  constructor(cluster = "devnet") {
+    this.url = this._resolveClusterUrl(cluster);
+  }
+  _resolveClusterUrl(cluster) {
+    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) {
+      return cluster;
+    }
+    const clusterUrls = {
+      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
+      devnet: "https://api.devnet.getlea.org",
+      testnet: "https://api.testnet.getlea.org",
+      local: "http://localhost:3000",
+      localhost: "http://localhost:3000"
+    };
+    if (!clusterUrls[cluster]) {
+      throw new Error(`Unknown cluster: ${cluster}`);
+    }
+    return clusterUrls[cluster];
+  }
+  async _sendRequest(method, params) {
+    const requestBody = {
+      jsonrpc: "1.0",
+      id: 1,
+      method
+    };
+    if (params !== void 0) {
+      requestBody.params = params;
+    }
+    const response = await fetch(this.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // is not kept alive and reused for the next request.
+        // PQC signatutres take a long time to compute, so we want to avoid broken pipe
+        "Connection": "close"
+      },
+      body: JSON.stringify(requestBody)
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`RPC error: ${data.error.message} (Code: ${data.error.code})`);
+    }
+    if (data.result === void 0) {
+      throw new Error(`Malformed response: Missing 'result' field.`);
+    }
+    return data.result;
+  }
+  // --- Public API Methods ---
+  getVersion() {
+    return this._sendRequest("getVersion");
+  }
+  getLatestBlockhash() {
+    return this._sendRequest("getLatestBlockhash");
+  }
+  getBalance(keys) {
+    return this._sendRequest("getBalance", keys);
+  }
+  getTransaction(id) {
+    return this._sendRequest("getTransaction", [id]);
+  }
+  getTransactionsForAccount(opts) {
+    return this._sendRequest("getTransactionsForAccount", [opts]);
+  }
+  sendTransaction(txInput) {
+    let paramsForServer;
+    if (typeof txInput === "string") {
+      paramsForServer = [txInput];
+    } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === "string") {
+      paramsForServer = txInput;
+    } else {
+      return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
+    }
+    return this._sendRequest("sendTransaction", paramsForServer);
+  }
+};
+var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
 
 // src/system-program.js
 var TransferInstruction = class {
@@ -6166,6 +6234,7 @@ export {
   ADDRESS_BYTE_LENGTH,
   ADDRESS_HRP,
   Address,
+  AuthTokenGenerator,
   BIP44_PURPOSE,
   CTE_CRYPTO_TYPE_ED25519,
   CTE_CRYPTO_TYPE_SLHDSA,
@@ -6184,11 +6253,13 @@ export {
   Transaction,
   Wallet,
   areUint8ArraysEqual,
+  base64ToUint8Array,
   bytesToHex,
   combineUint8Arrays,
   generateMnemonic,
   hexToBytes,
   randomBytes,
+  uint8ArrayToBase64,
   utf8ToBytes
 };
 /*! Bundled license information:

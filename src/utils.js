@@ -149,5 +149,37 @@ class KeyList {
 function combineUint8Arrays(arrays) {
     return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
 }
+
+function uint8ArrayToBase64(uint8Array) {
+    if (typeof Buffer !== 'undefined') {
+        // Node.js environment
+        return Buffer.from(uint8Array).toString('base64');
+    } else {
+        // Browser environment
+        let binary = '';
+        const len = uint8Array.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+        }
+        return btoa(binary);
+    }
+}
+
+function base64ToUint8Array(base64String) {
+    if (typeof Buffer !== 'undefined') {
+        // Node.js environment
+        const buf = Buffer.from(base64String, 'base64');
+        return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
+    } else {
+        // Browser environment
+        const binaryString = atob(base64String);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+    }
+}
 // Export the necessary functions and the class
-export { utf8ToBytes, bytesToHex, hexToBytes, randomBytes, KeyList, areUint8ArraysEqual, combineUint8Arrays };
+export { base64ToUint8Array, uint8ArrayToBase64, utf8ToBytes, bytesToHex, hexToBytes, randomBytes, KeyList, areUint8ArraysEqual, combineUint8Arrays };

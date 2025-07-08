@@ -7,5 +7,6 @@ export { SystemProgram } from './system-program.js';
 export { SLHKeypair } from './slh-keypair.js';
 export { Transaction } from './transaction.js';
 export { Address } from './address.js';
+export { AuthTokenGenerator } from './authToken.js';
 export * from './utils.js';
 export * from './constants.js';

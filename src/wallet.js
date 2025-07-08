@@ -5,6 +5,7 @@ import { SLHKeypair } from './slh-keypair.js';
 import { ED25519_DERIVATION_BASE, SLHDSA_DERIVATION_BASE, ADDRESS_BYTE_LENGTH, ADDRESS_HRP } from './constants.js';
 import { createBLAKE3 } from "hash-wasm";
 import { Address } from './address.js';
+import { AuthTokenGenerator } from './authToken.js';
 
 export class WalletImpl {
     #masterKey;
@@ -73,7 +74,8 @@ export class WalletImpl {
             edDsa,
             slhDsa,
             publicKeyPairHash,
-            address
+            address,
+            authToken: new AuthTokenGenerator(edDsa, slhDsa),
         };
     }
 

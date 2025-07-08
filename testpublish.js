@@ -29,6 +29,8 @@ const ACCOUNT_INDEX = 0;
         // A blockhash is required for serialization, but can be a dummy for this test
         publishTransaction.recentBlockhash = '1111111111111111111111111111111111111111111111111111111111111111';
 
+        console.log('auth token test');
+        console.log('auth token', await account.authToken.generate(12));
         // Sign the transaction with both keypairs
         await publishTransaction.sign(account);
 
