@@ -154,7 +154,7 @@ export function generateMnemonic(strength = 128) {
 // Derives the BIP39 seed from a mnemonic phrase and optional passphrase.
 // Uses PBKDF2-HMAC-SHA512 with 2048 rounds.
 // VALIDATES the mnemonic before deriving the seed. Throws error if invalid.
-export function mnemonicToSeed(mnemonic, passphrase = "") {
+export async function mnemonicToSeed(mnemonic, passphrase = "") {
     // This will throw an error if the mnemonic is invalid, preventing seed derivation.
     mnemonicToEntropy(mnemonic);
 
@@ -172,7 +172,7 @@ export function mnemonicToSeed(mnemonic, passphrase = "") {
     saltBytes.set(passphraseBytes, saltPrefixBytes.length);
 
     // PBKDF2-HMAC-SHA512
-    const seed = pbkdf2(sha512, passwordBytes, saltBytes, {
+    const seed = await pbkdf2(sha512, passwordBytes, saltBytes, {
         c: PBKDF2_ROUNDS,          // Iteration count
         dkLen: PBKDF2_KEY_LENGTH   // Derived key length in bytes (64 bytes / 512 bits)
     });

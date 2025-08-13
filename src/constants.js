@@ -23,8 +23,8 @@ export const SLHDSA_PQC_PURPOSE = 211;
  * Base derivation paths (SLIP-0010 compatible).
  * Example: m/44'/COIN_TYPE' or m/211'/COIN_TYPE'
  */
-export const SLHDSA_DERIVATION_BASE = `m/${SLHDSA_PQC_PURPOSE}'/${LEA_COIN_TYPE}'`;
-export const ED25519_DERIVATION_BASE = `m/${BIP44_PURPOSE}'/${LEA_COIN_TYPE}'`;
+//export const SLHDSA_DERIVATION_BASE = `m/${SLHDSA_PQC_PURPOSE}'/${LEA_COIN_TYPE}'`;
+export const LEA_DERIVATION_BASE = `m/${BIP44_PURPOSE}'/${LEA_COIN_TYPE}'`;
 
 /**
  * Default Bech32m Human-Readable Part (HRP) for Lea addresses.

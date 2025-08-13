@@ -1,38 +1,42 @@
-/*
-Attribution & Copyright Comments:
-Original work Copyright (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com)
-This code is based on the original work by Patricio Palladino and Paul Miller.
-Modifications Copyright (c) 2025, Allwin Ketnawang (getlea.org)
-
-The MIT License (MIT)
-
-Copyright (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com)
-Copyright (c) 2025, Allwin Ketnawang (getlea.org)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 
 import { createBLAKE3 } from "hash-wasm";
-import {
-    concatBytes, createView, hexToBytes,
-    utf8ToBytes
-} from "@noble/hashes/utils";
+
+// #region Utilities
+function utf8ToBytes(str) {
+    return new TextEncoder().encode(str);
+}
+
+function hexToBytes(hex) {
+    if (typeof hex !== 'string') {
+        throw new TypeError('hexToBytes: expected string, got ' + typeof hex);
+    }
+    if (hex.length % 2 !== 0) {
+        throw new Error('hexToBytes: received invalid unpadded hex');
+    }
+    const array = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < array.length; i++) {
+        const j = i * 2;
+        const hexByte = hex.slice(j, j + 2);
+        const byte = Number.parseInt(hexByte, 16);
+        if (Number.isNaN(byte) || byte < 0) {
+            throw new Error('Invalid byte sequence');
+        }
+        array[i] = byte;
+    }
+    return array;
+}
+
+function concatBytes(...arrays) {
+    const totalLength = arrays.reduce((acc, arr) => acc + arr.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const arr of arrays) {
+        result.set(arr, offset);
+        offset += arr.length;
+    }
+    return result;
+}
+// #endregion
 
 export const HARDENED_OFFSET = 0x80000000; // 2^31
 const ZERO = new Uint8Array([0]);
@@ -71,7 +75,7 @@ function ensureBytes(input, ...expectedLengths) {
 const numberToBytesBE = (num) => {
     if (!Number.isSafeInteger(num) || num < 0 || num >= 2 ** 32) { throw new Error(`Invalid number: ${num}. Must be >= 0 and < 2^32`); }
     const buffer = new Uint8Array(4);
-    createView(buffer).setUint32(0, num, false); // Big Endian
+    new DataView(buffer.buffer).setUint32(0, num, false); // Big Endian
     return buffer;
 };
 
@@ -124,8 +128,8 @@ export class HDKey {
      * @returns {Promise<Uint8Array>} The derived 32-byte key (seed).
      */
     async derive(path) {
-        if (!/^[mM](?: H)?(\/[0-9]+'?)*$/.test(path)) {
-            throw new Error('Invalid derivation path format. Expected "m/..." with hardened indices (e.g., "m/44\'/0\'").');
+        if (!/^[mM](?:\/[0-9]+'?)*$/.test(path)) {
+            throw new Error("Invalid derivation path format. Expected \"m/...\" with hardened indices (e.g., \"m/44'/0'\")");
         }
         if (path === 'm' || path === 'M') { return this.key; }
         const segments = path.replace(/^[mM]\/?/, '').split('/');

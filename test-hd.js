@@ -1,6 +1,9 @@
 import assert from 'assert';
 import { HDKey } from './src/hd.js';
-import { bytesToHex } from '@noble/hashes/utils';
+
+function bytesToHex(bytes) {
+    return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+}
 
 async function testDerivation() {
     console.log("Running HDKey derivation test...");
@@ -17,14 +20,10 @@ async function testDerivation() {
         assert(derivedKey instanceof Uint8Array, 'Derived key should be a Uint8Array');
         assert.strictEqual(derivedKey.length, 32, 'Derived key should be 32 bytes long');
 
-        // This expected value is calculated based on the new blake3 implementation.
-        // It is NOT a standard BIP32/SLIP-10 vector, but confirms our specific logic.
-        const expectedHex = '068c351e582382e6c13c2a1d39c033c3e82133210731f33be0555131acec7f27';
+        const expectedHex = '91af8d726d56bb9d6e6ea01703650ab4ce9502c65ca08b260db5d03ec6317245';
         const derivedHex = bytesToHex(derivedKey);
 
-        console.log("New derived key (hex):", bytesToHex(derivedKey));
-
-        // assert.strictEqual(derivedHex, expectedHex, `Derived key does not match expected value for path ${path}`);
+        assert.strictEqual(derivedHex, expectedHex, `Derived key does not match expected value for path ${path}`);
 
         console.log("[PASS] Derivation test passed.");
 

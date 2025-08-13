@@ -1,8 +1,8 @@
 // --- system-program.js ---
-import { SctpEncoder } from '@leachain/sctp';
+//import { SctpEncoder } from '@leachain/sctp';
 
 import { LEA_SYSTEM_PROGRAM } from './constants.js';
-
+/*
 export class TransferInstruction {
     #programIndex = null;
 
@@ -114,3 +114,4 @@ export class SystemProgram {
         return new RevokeKeyPairInstruction(obj);
     }
 }
+*/
