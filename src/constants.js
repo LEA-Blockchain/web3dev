@@ -14,12 +14,6 @@ export const LEA_COIN_TYPE = 2323;
 export const BIP44_PURPOSE = 44;
 
 /**
- * Custom purpose code for SLH-DSA (post-quantum).
- * Value 211 is arbitrary and avoids conflicts; it's also the bitwise inverse of 44.
- */
-export const SLHDSA_PQC_PURPOSE = 211;
-
-/**
  * Base derivation paths (SLIP-0010 compatible).
  * Example: m/44'/COIN_TYPE' or m/211'/COIN_TYPE'
  */
@@ -31,10 +25,6 @@ export const LEA_DERIVATION_BASE = `m/${BIP44_PURPOSE}'/${LEA_COIN_TYPE}'`;
  * Example: 'lea'
  */
 export const ADDRESS_HRP = 'lea';
-export const ADDRESS_BYTE_LENGTH = 32;
-export const CTE_CRYPTO_TYPE_ED25519 = 0;
-export const CTE_CRYPTO_TYPE_SLHDSA = 1;
-export const MAX_TRANSACTION_SIZE = 49152; // 48 KiB
 
 // Add other constants as needed:
 // export const DEFAULT_RPC_ENDPOINT = 'http://localhost:8899';

@@ -1,0 +1,24 @@
+{
+  "comment": "A transaction to publish the feePayer's public keys to a contract.",
+  "sequence": 1,
+  "feePayer": "publisher",
+  "gasLimit": 500000000,
+  "gasPrice": 10,
+  "signers": [],
+  "constants": {
+    "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)"
+  },
+  "invocations": [
+    {
+      "targetAddress": "$const(contractAddress)",
+      "instructions": [
+        {
+          "uleb": 1
+        },
+        {
+          "INLINE": "$pubset(publisher)"
+        }
+      ]
+    }
+  ]
+}

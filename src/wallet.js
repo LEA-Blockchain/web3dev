@@ -1,6 +1,6 @@
 import { HDKey } from './hd.js';
 import { mnemonicToSeed } from './bip39.js';
-import { LEA_DERIVATION_BASE, ADDRESS_BYTE_LENGTH, ADDRESS_HRP } from './constants.js';
+import { LEA_DERIVATION_BASE } from './constants.js';
 import { generateKeyset } from '@leachain/keygen';
 
 export class WalletImpl {
