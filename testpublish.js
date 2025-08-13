@@ -1,5 +1,8 @@
 import { SctpDecoder } from '@leachain/sctp';
-import { Wallet, SystemProgram, Transaction, Address } from './src/index.js';
+import { Wallet, SystemProgram, Transaction, Address, AuthTokenGenerator } from './src/index.js';
+
+import { createTransaction } from '@leachain/ltm';
+import { generateKeyset } from '@leachain/keygen';
 //import { decodeAndLogCteTransaction } from './src/debug-utils.js';
 
 // --- Configuration ---
@@ -20,51 +23,43 @@ const ACCOUNT_INDEX = 0;
         // --- Test 1: Create and Debug a PublishKeyPair Transaction ---
         console.log("\n\n--- Creating PublishKeyPair Transaction ---");
 
-        const publishTransaction = new Transaction();
-        publishTransaction.add(SystemProgram.publishKeyPair({
-            address: account.address,
-            eddsaPubKey: account.edDsa.publicKey.toBytes(),
-            slhPubKey: account.slhDsa.publicKey.toBytes(),
-        }));
-        // A blockhash is required for serialization, but can be a dummy for this test
-        publishTransaction.recentBlockhash = '1111111111111111111111111111111111111111111111111111111111111111';
+        const manifest = {
+            "comment": "A transaction to publish the feePayer's public keys to a contract.",
+            "sequence": 1,
+            "feePayer": "publisher",
+            "gasLimit": 500000000,
+            "gasPrice": 10,
+            "signers": [],
+            "constants": {
+                "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)"
+            },
+            "invocations": [
+                {
+                    "targetAddress": "$const(contractAddress)",
+                    "instructions": [
+                        {
+                            "uleb": 1
+                        },
+                        {
+                            "INLINE": "$pubset(publisher)"
+                        }
+                    ]
+                }
+            ]
+        };
 
-        console.log('auth token test');
-        console.log('auth token', await account.authToken.generate(12));
-        // Sign the transaction with both keypairs
-        await publishTransaction.sign(account);
+        const masterSeed = new Uint8Array(32);
+        const { keyset, address } = await generateKeyset(masterSeed);
+        console.log('Generated Address:', address);
+        console.log('Generated Keyset:', keyset);
 
-        const publishTxBytes = await publishTransaction.toBytes();
-        console.log(`\n--- Serialized PublishKeyPair Transaction (${publishTxBytes.length} bytes) ---
-`);
+        const signerKeys = {
+            publisher: keyset
+        };
+        const transactionBytes = await createTransaction(manifest, signerKeys);
+        console.log('Output:', transactionBytes);
 
-        // Use the debugger to log the contents
-        console.log("Transaction Bytes:", publishTxBytes);
-        //debug
-        const decoder = await SctpDecoder();
-        const decoded = decoder.decode(publishTxBytes);
-        console.log("Decoded Transaction:", decoded);
-
-        /*
-                // --- Test 2: Create and Debug a RevokeKeyPair Transaction ---
-                console.log("\n\n--- Creating RevokeKeyPair Transaction ---");
-        
-                const revokeTransaction = new Transaction();
-                revokeTransaction.add(SystemProgram.revokeKeyPair({
-                    accountPubKeyHash: account.address,
-                }));
-                revokeTransaction.recentBlockhash = '22222222222222222222222222222222'; // Dummy blockhash
-        
-                await revokeTransaction.sign(account);
-        
-                const revokeTxBytes = await revokeTransaction.toBytes();
-                console.log(`\n--- Serialized RevokeKeyPair Transaction (${revokeTxBytes.length} bytes) ---
-        
-                `);
-        
-                // Use the debugger to log the contents
-                await decodeAndLogCteTransaction(revokeTxBytes);
-        */
+        process.exit();
 
     } catch (error) {
         console.error("\n--- SCRIPT FAILED ---");
