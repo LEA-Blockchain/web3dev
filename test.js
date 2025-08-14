@@ -1,4 +1,6 @@
-import { Wallet, SystemProgram, Connection, generateMnemonic } from './src/index.js';
+//import { Wallet, SystemProgram, Connection, generateMnemonic } from './src/index.js';
+import { Wallet, SystemProgram, Connection, generateMnemonic } from './dist/lea-wallet.node.mjs'
+
 import fs from 'fs';
 
 const MNEMONIC = "legal winner thank year wave sausage worth useful legal winner thank yellow";
