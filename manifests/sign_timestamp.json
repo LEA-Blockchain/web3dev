@@ -6,12 +6,11 @@
   "gasPrice": 0,
   "signers": [],
   "constants": {
-    "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111110)",
     "timestamp": "1"
   },
   "invocations": [
     {
-      "targetAddress": "$const(contractAddress)",
+      "targetAddress": "$addr(publisher)",
       "instructions": [
         {
           "comment": "Timestamp",

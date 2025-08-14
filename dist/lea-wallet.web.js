@@ -3982,12 +3982,11 @@ var sign_timestamp_default = {
   gasPrice: 0,
   signers: [],
   constants: {
-    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111110)",
     timestamp: "1"
   },
   invocations: [
     {
-      targetAddress: "$const(contractAddress)",
+      targetAddress: "$addr(publisher)",
       instructions: [
         {
           comment: "Timestamp",
@@ -4165,11 +4164,6 @@ var WalletImpl = class {
       throw new Error(`Failed to derive account for path ${index}: ${error.message}`);
     }
   }
-  /**
-   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
-  * and derives a unified address from both public keys.
-  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
-  */
   async getAccount(index) {
     if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
       throw new Error("Account index must be a non-negative integer.");
