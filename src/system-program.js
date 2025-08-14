@@ -1,3 +1,4 @@
+// systemProgram.js
 import { createTransaction, decodeExecutionResult } from '@leachain/ltm';
 import transferManifest from '../manifests/transfer.json' with { type: 'json' };
 import mintManifest from '../manifests/mint.json' with { type: 'json' };
@@ -8,110 +9,73 @@ import getAllowedMintManifest from '../manifests/get_allowed_mint.json' with { t
 import getBalanceManifest from '../manifests/get_balance.json' with { type: 'json' };
 import getCurrentSupplyManifest from '../manifests/get_current_supply.json' with { type: 'json' };
 
-const updateManifestConstants = (manifest, constants) => {
-  return {
-    ...manifest,
-    constants: {
-      ...manifest.constants,
-      ...constants,
-    }
+const clone = (x) =>
+(typeof structuredClone === 'function'
+  ? structuredClone(x)
+  : JSON.parse(JSON.stringify(x)));
+
+const withConstants = (manifest, constants) => {
+  const m = clone(manifest);
+  m.constants = { ...(m.constants || {}), ...constants };
+  return m;
+};
+
+async function buildTxAndDecoder(baseManifest, constants = {}, signers = {}) {
+  const manifestUsed = Object.keys(constants).length
+    ? withConstants(baseManifest, constants)
+    : clone(baseManifest);
+
+  const tx = await createTransaction(manifestUsed, signers);
+
+  // decode() is bound to the exact manifest used
+  const decode = async (resultBuffer) => {
+    return decodeExecutionResult(resultBuffer, manifestUsed);
   };
+
+  return { tx, decode };
 }
 
 export const SystemProgram = {
-  /**
-   * Creates a transfer transaction.
-   */
   transfer: async (fromKeyset, toAddress, amount) => {
     const signers = { publisher: fromKeyset };
-    const constants = {
-      receiver: `$addr(${toAddress})`,
-      amount: amount.toString()
-    };
-    const manifest = updateManifestConstants(transferManifest, constants);
-    return await createTransaction(manifest, signers);
+    const constants = { receiver: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(transferManifest, constants, signers);
   },
 
-  /**
-   * Creates a mint transaction.
-   */
   mint: async (fromKeyset, toAddress, amount) => {
     const signers = { minter: fromKeyset };
-    const constants = {
-      recipient: `$addr(${toAddress})`,
-      amount: amount.toString(),
-    };
-
-    const manifest = updateManifestConstants(mintManifest, constants);
-    return await createTransaction(manifest, signers);
+    const constants = { recipient: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(mintManifest, constants, signers);
   },
 
-  /**
-   * Creates a burn transaction.
-   */
   burn: async (fromKeyset, amount) => {
     const signers = { burner: fromKeyset };
-    const constants = {
-      amount: amount.toString(),
-    };
-    const manifest = updateManifestConstants(burnManifest, constants);
-    return await createTransaction(manifest, signers);
+    const constants = { amount: String(amount) };
+    return buildTxAndDecoder(burnManifest, constants, signers);
   },
 
-  /**
-   * Creates a publish keyset transaction.
-   */
   publishKeyset: async (fromKeyset) => {
     const signers = { publisher: fromKeyset };
-    return await createTransaction(publishKeysetManifest, signers);
+    return buildTxAndDecoder(publishKeysetManifest, {}, signers);
   },
 
-  /**
-   * Creates a mint whitelist transaction.
-   */
   mintWhitelist: async (fromKeyset, toAddress, amount) => {
     const signers = { authority: fromKeyset };
-    const constants = {
-      whitelistAddress: `$addr(${toAddress})`,
-      amount: amount.toString(),
-    };
-    const manifest = updateManifestConstants(mintWhitelistManifest, constants);
-    return await createTransaction(manifest, signers);
+    const constants = { whitelistAddress: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(mintWhitelistManifest, constants, signers);
   },
 
-  /**
-   * Creates a get allowed mint transaction.
-   */
   getAllowedMint: async (toAddress) => {
-    const constants = {
-      address: `$addr(${toAddress})`,
-    };
-    const manifest = updateManifestConstants(getAllowedMintManifest, constants);
-    return await createTransaction(manifest, {});
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(getAllowedMintManifest, constants, {});
   },
 
-  /**
-   * Creates a get balance transaction.
-   */
   getBalance: async (toAddress) => {
-    const constants = {
-      address: `$addr(${toAddress})`,
-    };
-    const manifest = updateManifestConstants(getBalanceManifest, constants);
-    return await createTransaction(manifest, {});
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(getBalanceManifest, constants, {});
   },
 
-  /**
-   * Creates a get current supply transaction.
-   */
   getCurrentSupply: async () => {
-    return await createTransaction(getCurrentSupplyManifest, {});
+    return buildTxAndDecoder(getCurrentSupplyManifest, {}, {});
   },
-
-  parseGetCurrentSupply: async (resultBuffer) => {
-    const decoded = await decodeExecutionResult(resultBuffer, getCurrentSupplyManifest);
-    console.log('[PASS] Decoded Result:');
-    console.dir(decoded, { depth: null });
-    return decoded;
-  }
 };

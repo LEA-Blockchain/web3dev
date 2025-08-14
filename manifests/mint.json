@@ -15,8 +15,12 @@
       "targetAddress": "$const(contractAddress)",
       "instructions": [
         {
-          "comment": "Mint LEA tokens",
+          "comment": "Mint LEA Coins",
           "uleb": 2
+        },
+        {
+          "comment": "Delegate mint authority",
+          "uleb": "$addr(minter)"
         },
         {
           "comment": "Recipient account",

@@ -7,7 +7,6 @@
   "signers": [],
   "constants": {
     "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
-    "sender": "$addr(publisher)",
     "receiver": "$addr(0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef)",
     "amount": "4000"
   },
@@ -21,7 +20,7 @@
         },
         {
           "comment": "sender account",
-          "uleb": "$const(sender)"
+          "uleb": "$addr(publisher)"
         },
         {
           "comment": "receiver account",
