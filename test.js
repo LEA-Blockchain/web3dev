@@ -17,7 +17,7 @@ const ACCOUNT_INDEX = 0;
         console.log("\n\n--- Authenticating Timestamp ---");
         const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
         console.log("Signed Timestamp:", signTimestamp);
-return;
+
         //const wallet = await Wallet.fromMnemonic(mnemonic);
         const account = await wallet.getAccount(ACCOUNT_INDEX);
         //lea1sv9d4ayz8lm4mjxnxdu42c23g0jpk7w7r3g2euvug5ltn4wfnffq8pnjnn
