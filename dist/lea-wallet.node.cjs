@@ -111,7 +111,7 @@ var require_index_umd = __commonJS({
       }
       const globalObject = getGlobal();
       const nodeBuffer = (_a = globalObject.Buffer) !== null && _a !== void 0 ? _a : null;
-      const textEncoder = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
+      const textEncoder2 = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
       function intArrayToString(arr, len) {
         return String.fromCharCode(...arr.subarray(0, len));
       }
@@ -163,7 +163,7 @@ var require_index_umd = __commonJS({
         throw new Error("Invalid data type!");
       } : (data2) => {
         if (typeof data2 === "string") {
-          return textEncoder.encode(data2);
+          return textEncoder2.encode(data2);
         }
         if (ArrayBuffer.isView(data2)) {
           return new Uint8Array(data2.buffer, data2.byteOffset, data2.byteLength);
@@ -2455,7 +2455,7 @@ var require_index_umd2 = __commonJS({
       }
       const globalObject = getGlobal();
       const nodeBuffer = (_a = globalObject.Buffer) !== null && _a !== void 0 ? _a : null;
-      const textEncoder = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
+      const textEncoder2 = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
       function intArrayToString(arr, len) {
         return String.fromCharCode(...arr.subarray(0, len));
       }
@@ -2507,7 +2507,7 @@ var require_index_umd2 = __commonJS({
         throw new Error("Invalid data type!");
       } : (data2) => {
         if (typeof data2 === "string") {
-          return textEncoder.encode(data2);
+          return textEncoder2.encode(data2);
         }
         if (ArrayBuffer.isView(data2)) {
           return new Uint8Array(data2.buffer, data2.byteOffset, data2.byteLength);
@@ -6115,14 +6115,22 @@ function encode(hrp, dataBytes) {
   }
   return encodedString;
 }
+var textEncoder = new TextEncoder();
+function uint8ArrayToHex(bytes) {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function stringToUint8Array(str) {
+  return textEncoder.encode(str);
+}
 async function deriveSeed(masterSeed, domain, length) {
   const blake3 = await (0, import_hash_wasm3.createBLAKE3)();
+  const domainBytes = stringToUint8Array(domain);
   let derivedSeed = new Uint8Array(0);
   let counter = 0;
   while (derivedSeed.length < length) {
     blake3.init();
     blake3.update(masterSeed);
-    blake3.update(Buffer.from(domain));
+    blake3.update(domainBytes);
     blake3.update(new Uint8Array([counter]));
     const hash = blake3.digest("binary");
     const newDerivedSeed = new Uint8Array(derivedSeed.length + hash.length);
@@ -6233,7 +6241,7 @@ async function generateKeyset(masterSeed = null) {
   blake3.update(falconPk);
   const addressHash = blake3.digest("binary");
   const address = encode(ADDRESS_HRP2, addressHash);
-  const addressHex = Buffer.from(addressHash).toString("hex");
+  const addressHex = uint8ArrayToHex(addressHash);
   const keyset = [
     [Array.from(ed25519Sk), Array.from(ed25519Pk)],
     [Array.from(falconSk), Array.from(falconPk)]
@@ -6467,7 +6475,7 @@ var require_index_umd3 = __commonJS2({
       }
       const globalObject = getGlobal();
       const nodeBuffer = (_a = globalObject.Buffer) !== null && _a !== void 0 ? _a : null;
-      const textEncoder = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
+      const textEncoder2 = globalObject.TextEncoder ? new globalObject.TextEncoder() : null;
       function intArrayToString(arr, len) {
         return String.fromCharCode(...arr.subarray(0, len));
       }
@@ -6519,7 +6527,7 @@ var require_index_umd3 = __commonJS2({
         throw new Error("Invalid data type!");
       } : (data2) => {
         if (typeof data2 === "string") {
-          return textEncoder.encode(data2);
+          return textEncoder2.encode(data2);
         }
         if (ArrayBuffer.isView(data2)) {
           return new Uint8Array(data2.buffer, data2.byteOffset, data2.byteLength);

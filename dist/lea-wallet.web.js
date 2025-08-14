@@ -2220,14 +2220,22 @@ function encode(hrp, dataBytes) {
   }
   return encodedString;
 }
+var textEncoder3 = new TextEncoder();
+function uint8ArrayToHex(bytes) {
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function stringToUint8Array(str) {
+  return textEncoder3.encode(str);
+}
 async function deriveSeed(masterSeed, domain, length) {
   const blake3 = await createBLAKE32();
+  const domainBytes = stringToUint8Array(domain);
   let derivedSeed = new Uint8Array(0);
   let counter = 0;
   while (derivedSeed.length < length) {
     blake3.init();
     blake3.update(masterSeed);
-    blake3.update(Buffer.from(domain));
+    blake3.update(domainBytes);
     blake3.update(new Uint8Array([counter]));
     const hash = blake3.digest("binary");
     const newDerivedSeed = new Uint8Array(derivedSeed.length + hash.length);
@@ -2338,7 +2346,7 @@ async function generateKeyset(masterSeed = null) {
   blake3.update(falconPk);
   const addressHash = blake3.digest("binary");
   const address = encode(ADDRESS_HRP2, addressHash);
-  const addressHex = Buffer.from(addressHash).toString("hex");
+  const addressHex = uint8ArrayToHex(addressHash);
   const keyset = [
     [Array.from(ed25519Sk), Array.from(ed25519Pk)],
     [Array.from(falconSk), Array.from(falconPk)]
@@ -2542,7 +2550,7 @@ function getGlobal3() {
 }
 var globalObject3 = getGlobal3();
 var nodeBuffer3 = (_a3 = globalObject3.Buffer) !== null && _a3 !== void 0 ? _a3 : null;
-var textEncoder3 = globalObject3.TextEncoder ? new globalObject3.TextEncoder() : null;
+var textEncoder4 = globalObject3.TextEncoder ? new globalObject3.TextEncoder() : null;
 function hexCharCodesToInt3(a, b) {
   return (a & 15) + (a >> 6 | a >> 3 & 8) << 4 | (b & 15) + (b >> 6 | b >> 3 & 8);
 }
@@ -2591,7 +2599,7 @@ var getUInt8Buffer3 = nodeBuffer3 !== null ? (data) => {
   throw new Error("Invalid data type!");
 } : (data) => {
   if (typeof data === "string") {
-    return textEncoder3.encode(data);
+    return textEncoder4.encode(data);
   }
   if (ArrayBuffer.isView(data)) {
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
