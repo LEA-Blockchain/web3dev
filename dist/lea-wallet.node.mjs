@@ -6265,79 +6265,66 @@ var ConnectionImpl = class {
     this.url = this._resolveClusterUrl(cluster);
   }
   _resolveClusterUrl(cluster) {
-    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) {
-      return cluster;
-    }
+    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) return cluster;
     const clusterUrls = {
       "mainnet-beta": "https://api.mainnet-beta.getlea.org",
       devnet: "https://api.devnet.getlea.org",
       testnet: "https://api.testnet.getlea.org",
-      local: "http://localhost:3000",
-      localhost: "http://localhost:3000"
+      local: "http://127.0.0.1:60000",
+      localhost: "http://localhost:60000"
     };
-    if (!clusterUrls[cluster]) {
-      throw new Error(`Unknown cluster: ${cluster}`);
-    }
+    if (!clusterUrls[cluster]) throw new Error(`Unknown cluster: ${cluster}`);
     return clusterUrls[cluster];
   }
-  async _sendRequest(method, params) {
-    const requestBody = {
-      jsonrpc: "1.0",
-      id: 1,
-      method
-    };
-    if (params !== void 0) {
-      requestBody.params = params;
+  /**
+   * Sends a transaction and returns a result object:
+   * {
+   *   ok: boolean,               // response.ok
+   *   status: number,            // HTTP status
+   *   decoded: any | null,       // decoded body (if any and decode succeeded)
+   *   raw: Uint8Array,           // raw body (possibly length 0)
+   *   decodeError: Error | null, // error thrown during decode (if any)
+   *   responseHeaders: Headers   // fetch Headers instance
+   * }
+   *
+   * - Network failures still throw (so you can distinguish transport vs. server error).
+   * - Server errors (non-2xx) return ok:false but still try to decode.
+   */
+  async sendTransaction(txObject) {
+    const { tx, decode: decode2 } = txObject;
+    if (!(tx instanceof Uint8Array)) {
+      throw new Error("sendTransaction expects tx to be a Uint8Array");
     }
-    const response = await fetch(this.url, {
+    if (typeof decode2 !== "function") {
+      throw new Error("sendTransaction expects a decode(resultBuffer) function");
+    }
+    const response = await fetch(`${this.url}/execute`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        // is not kept alive and reused for the next request.
-        // PQC signatutres take a long time to compute, so we want to avoid broken pipe
+        "Content-Type": "application/octet-stream",
         "Connection": "close"
       },
-      body: JSON.stringify(requestBody)
+      body: tx
     });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+    const arrayBuffer = await response.arrayBuffer();
+    const raw = new Uint8Array(arrayBuffer);
+    let decoded = null;
+    let decodeError = null;
+    if (raw.length > 0) {
+      try {
+        decoded = await decode2(raw);
+      } catch (e) {
+        decodeError = e instanceof Error ? e : new Error(String(e));
+      }
     }
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(`RPC error: ${data.error.message} (Code: ${data.error.code})`);
-    }
-    if (data.result === void 0) {
-      throw new Error(`Malformed response: Missing 'result' field.`);
-    }
-    return data.result;
-  }
-  // --- Public API Methods ---
-  getVersion() {
-    return this._sendRequest("getVersion");
-  }
-  getLatestBlockhash() {
-    return this._sendRequest("getLatestBlockhash");
-  }
-  getBalance(keys) {
-    return this._sendRequest("getBalance", keys);
-  }
-  getTransaction(id) {
-    return this._sendRequest("getTransaction", [id]);
-  }
-  getTransactionsForAccount(opts) {
-    return this._sendRequest("getTransactionsForAccount", [opts]);
-  }
-  sendTransaction(txInput) {
-    let paramsForServer;
-    if (typeof txInput === "string") {
-      paramsForServer = [txInput];
-    } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === "string") {
-      paramsForServer = txInput;
-    } else {
-      return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
-    }
-    return this._sendRequest("sendTransaction", paramsForServer);
+    return {
+      ok: response.ok,
+      status: response.status,
+      decoded,
+      raw,
+      decodeError,
+      responseHeaders: response.headers
+    };
   }
 };
 var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
@@ -8856,6 +8843,18 @@ function createShim2(config = {}) {
     randomBytesImpl: randomBytes3
   });
 }
+var MSCTP_ERR_INVALID_HEADER = -1;
+var MSCTP_ERR_INVALID_LENGTH = -2;
+var MSCTP_ERR_OVERLONG_LEB128 = -3;
+var MSCTP_ERR_MALFORMED_LEB128 = -4;
+var MSCTP_ERR_SIZE_LIMIT_EXCEEDED = -5;
+var MsctpError = class extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = "MsctpError";
+    this.code = code;
+  }
+};
 var MSCTP_TT_SLEB128 = 0;
 var MSCTP_TT_ULEB128 = 1;
 var MSCTP_TT_SMALL_VECTOR = 2;
@@ -8865,6 +8864,12 @@ var MSCTP_MAX_SMALL_VECTOR_SIZE = 63;
 var MSCTP_MAX_LARGE_VECTOR_SIZE = 1048576;
 function msctp_make_header(modifier, tt) {
   return modifier << 2 | tt & MSCTP_TT_MASK;
+}
+function msctp_get_tt(header) {
+  return header & MSCTP_TT_MASK;
+}
+function msctp_get_modifier(header) {
+  return header >> 2;
 }
 function _encode_raw_uleb128(value) {
   if (value < 0n) {
@@ -8884,6 +8889,29 @@ function _encode_raw_uleb128(value) {
   }
   return new Uint8Array(bytes);
 }
+function _decode_raw_uleb128(data) {
+  let value = 0n;
+  let shift = 0n;
+  let i = 0;
+  let byte;
+  while (true) {
+    if (i >= data.length) {
+      throw new MsctpError("Unterminated ULEB128 sequence", MSCTP_ERR_MALFORMED_LEB128);
+    }
+    byte = data[i];
+    i++;
+    value |= BigInt(byte & 127) << shift;
+    if ((byte & 128) === 0) {
+      break;
+    }
+    shift += 7n;
+  }
+  const encoded = _encode_raw_uleb128(value);
+  if (encoded.length !== i) {
+    throw new MsctpError("Overlong ULEB128 encoding", MSCTP_ERR_OVERLONG_LEB128);
+  }
+  return [value, i];
+}
 function _encode_raw_sleb128(value) {
   const bytes = [];
   let more = true;
@@ -8899,6 +8927,30 @@ function _encode_raw_sleb128(value) {
     bytes.push(byte);
   }
   return new Uint8Array(bytes);
+}
+function _decode_raw_sleb128(data) {
+  let value = 0n;
+  let shift = 0n;
+  let i = 0;
+  let byte = 0;
+  while (true) {
+    if (i >= data.length) {
+      throw new MsctpError("Unterminated SLEB128 sequence", MSCTP_ERR_MALFORMED_LEB128);
+    }
+    byte = data[i++];
+    value |= BigInt(byte & 127) << shift;
+    shift += 7n;
+    if ((byte & 128) === 0) break;
+  }
+  if ((byte & 64) !== 0) {
+    const mask = (1n << shift) - 1n;
+    value = value & mask | ~mask;
+  }
+  const encoded = _encode_raw_sleb128(value);
+  if (encoded.length !== i) {
+    throw new MsctpError("Overlong SLEB128 encoding", MSCTP_ERR_OVERLONG_LEB128);
+  }
+  return [value, i];
 }
 var MsctpEncoder = class {
   constructor() {
@@ -8965,6 +9017,97 @@ var MsctpEncoder = class {
       offset += chunk.length;
     }
     return result;
+  }
+};
+var MsctpDecoder = class {
+  /**
+   * @param {Uint8Array} data The MSCTP data to decode.
+   */
+  constructor(data) {
+    this.data = data;
+    this.offset = 0;
+  }
+  /**
+   * Checks if there is more data to read.
+   * @returns {boolean} True if the cursor has not reached the end of the data.
+   */
+  hasNext() {
+    return this.offset < this.data.length;
+  }
+  /**
+   * Peeks at the type tag of the next MSCTP object without advancing the cursor.
+   * @returns {number | null} The type tag, or null if at the end of the data.
+   */
+  peekType() {
+    if (!this.hasNext()) {
+      return null;
+    }
+    return msctp_get_tt(this.data[this.offset]);
+  }
+  /**
+   * Reads the next object as an SLEB128-encoded integer.
+   * @returns {bigint} The decoded integer.
+   * @throws {MsctpError} If the next object is not a valid SLEB128.
+   */
+  readSleb128() {
+    const header = this.data[this.offset];
+    if (msctp_get_tt(header) !== MSCTP_TT_SLEB128 || msctp_get_modifier(header) !== 0) {
+      throw new MsctpError("Invalid header for SLEB128", MSCTP_ERR_INVALID_HEADER);
+    }
+    const [value, bytesRead] = _decode_raw_sleb128(this.data.subarray(this.offset + 1));
+    this.offset += bytesRead + 1;
+    return value;
+  }
+  /**
+   * Reads the next object as a ULEB128-encoded integer.
+   * @returns {bigint} The decoded integer.
+   * @throws {MsctpError} If the next object is not a valid ULEB128.
+   */
+  readUleb128() {
+    const header = this.data[this.offset];
+    if (msctp_get_tt(header) !== MSCTP_TT_ULEB128 || msctp_get_modifier(header) !== 0) {
+      throw new MsctpError("Invalid header for ULEB128", MSCTP_ERR_INVALID_HEADER);
+    }
+    const [value, bytesRead] = _decode_raw_uleb128(this.data.subarray(this.offset + 1));
+    this.offset += bytesRead + 1;
+    return value;
+  }
+  /**
+   * Reads the next object as a vector.
+   * @returns {Uint8Array} The decoded vector payload.
+   * @throws {MsctpError} If the next object is not a valid vector.
+   */
+  readVector() {
+    const header = this.data[this.offset];
+    const tt = msctp_get_tt(header);
+    if (tt === MSCTP_TT_SMALL_VECTOR) {
+      const len = msctp_get_modifier(header);
+      const totalLen = 1 + len;
+      if (this.data.length < this.offset + totalLen) {
+        throw new MsctpError("Data buffer too small for SMALL_VECTOR length", MSCTP_ERR_INVALID_LENGTH);
+      }
+      const payload = this.data.subarray(this.offset + 1, this.offset + totalLen);
+      this.offset += totalLen;
+      return payload;
+    } else if (tt === MSCTP_TT_LARGE_VECTOR) {
+      if (msctp_get_modifier(header) !== 0) {
+        throw new MsctpError("Invalid modifier for LARGE_VECTOR", MSCTP_ERR_INVALID_HEADER);
+      }
+      const [len, lenBytesRead] = _decode_raw_uleb128(this.data.subarray(this.offset + 1));
+      if (len > MSCTP_MAX_LARGE_VECTOR_SIZE) {
+        throw new MsctpError("LARGE_VECTOR size exceeds limit", MSCTP_ERR_SIZE_LIMIT_EXCEEDED);
+      }
+      const payloadOffset = 1 + lenBytesRead;
+      const totalObjectSize = payloadOffset + Number(len);
+      if (this.data.length < this.offset + totalObjectSize) {
+        throw new MsctpError("Data buffer too small for declared LARGE_VECTOR payload size", MSCTP_ERR_INVALID_LENGTH);
+      }
+      const payload = this.data.subarray(this.offset + payloadOffset, this.offset + totalObjectSize);
+      this.offset += totalObjectSize;
+      return payload;
+    } else {
+      throw new MsctpError(`Invalid vector type tag: ${tt}`, MSCTP_ERR_INVALID_HEADER);
+    }
   }
 };
 var CHARSET2 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
@@ -9601,6 +9744,98 @@ function appendSignatures(encoder, signatures) {
     encoder.addVector(sig.falcon512);
   }
 }
+var SCHEMA_REGEX = /^(uleb|sleb|vector)\((\d+)\)$/;
+async function parseResultSchema(manifest) {
+  if (!manifest.resultSchema) {
+    return /* @__PURE__ */ new Map();
+  }
+  const fakeManifestForResolving = {
+    constants: manifest.constants,
+    invocations: Object.keys(manifest.resultSchema).map((programId) => ({
+      targetAddress: programId,
+      instructions: []
+    }))
+  };
+  const resolved = await resolveManifest(fakeManifestForResolving);
+  const parsedSchema = /* @__PURE__ */ new Map();
+  for (const programIdKey in manifest.resultSchema) {
+    const match = programIdKey.match(/\(([^)]+)\)/);
+    const alias = match ? match[1] : programIdKey;
+    let literalAddress = resolved._maps.alias.get(alias) || alias;
+    const literalMatch = literalAddress.match(/\(([^)]+)\)/);
+    if (literalMatch) {
+      literalAddress = literalMatch[1];
+    }
+    const addressIndex = resolved._maps.literal.get(literalAddress);
+    if (addressIndex === void 0) {
+      console.warn(`[WARN] Could not resolve address for schema key: ${programIdKey}`);
+      continue;
+    }
+    const programIdHex = Buffer.from(resolved.addresses[addressIndex]).toString("hex");
+    const fieldMap = /* @__PURE__ */ new Map();
+    const schemaFields = manifest.resultSchema[programIdKey];
+    for (const fieldName in schemaFields) {
+      const schemaValue = schemaFields[fieldName];
+      const match2 = schemaValue.match(SCHEMA_REGEX);
+      if (!match2) {
+        throw new Error(`[ERROR] Invalid resultSchema format for field '${fieldName}': "${schemaValue}". Expected "type(key)".`);
+      }
+      const type = match2[1];
+      const key = parseInt(match2[2], 10);
+      fieldMap.set(key, { name: fieldName, type });
+    }
+    parsedSchema.set(programIdHex, fieldMap);
+  }
+  return parsedSchema;
+}
+async function decodeExecutionResult(resultBuffer, manifest) {
+  const schema = await parseResultSchema(manifest);
+  if (schema.size === 0 && resultBuffer.length > 0) {
+    console.warn("[WARN] No resultSchema found in manifest. Returning raw decoded data.");
+  }
+  const decoder = new MsctpDecoder(resultBuffer);
+  const results = /* @__PURE__ */ new Map();
+  while (decoder.hasNext()) {
+    const programId = decoder.readVector();
+    const programIdHex = Buffer.from(programId).toString("hex");
+    const entryCount = Number(decoder.readUleb128());
+    const programSchema = schema.get(programIdHex);
+    const decodedObject = {};
+    for (let i = 0; i < entryCount; i++) {
+      const key = Number(decoder.readUleb128());
+      const typeId = decoder.peekType();
+      let value;
+      let fieldName = `key_${key}`;
+      let type = "unknown";
+      if (programSchema && programSchema.has(key)) {
+        const schemaEntry = programSchema.get(key);
+        fieldName = schemaEntry.name;
+        type = schemaEntry.type;
+      }
+      if (typeId === MSCTP_TT_ULEB128) {
+        if (type !== "uleb" && programSchema) {
+          console.warn(`[WARN] Type mismatch for ${fieldName}: schema says '${type}', but found 'uleb'.`);
+        }
+        value = decoder.readUleb128();
+      } else if (typeId === MSCTP_TT_SLEB128) {
+        if (type !== "sleb" && programSchema) {
+          console.warn(`[WARN] Type mismatch for ${fieldName}: schema says '${type}', but found 'sleb'.`);
+        }
+        value = decoder.readSleb128();
+      } else if (typeId === MSCTP_TT_SMALL_VECTOR || typeId === MSCTP_TT_LARGE_VECTOR) {
+        if (type !== "vector" && programSchema) {
+          console.warn(`[WARN] Type mismatch for ${fieldName}: schema says '${type}', but found 'vector'.`);
+        }
+        value = decoder.readVector();
+      } else {
+        throw new Error(`[ERROR] Unsupported MSCTP type ID ${typeId} in result stream.`);
+      }
+      decodedObject[fieldName] = value;
+    }
+    results.set(programIdHex, decodedObject);
+  }
+  return results;
+}
 var import_hash_wasm22 = __toESM2(require_index_umd3(), 1);
 function toHexString(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -9656,7 +9891,6 @@ var transfer_default = {
   signers: [],
   constants: {
     contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
-    sender: "$addr(publisher)",
     receiver: "$addr(0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef)",
     amount: "4000"
   },
@@ -9670,7 +9904,7 @@ var transfer_default = {
         },
         {
           comment: "sender account",
-          uleb: "$const(sender)"
+          uleb: "$addr(publisher)"
         },
         {
           comment: "receiver account",
@@ -9704,8 +9938,12 @@ var mint_default = {
       targetAddress: "$const(contractAddress)",
       instructions: [
         {
-          comment: "Mint LEA tokens",
+          comment: "Mint LEA Coins",
           uleb: 2
+        },
+        {
+          comment: "Delegate mint authority",
+          uleb: "$addr(minter)"
         },
         {
           comment: "Recipient account",
@@ -9782,63 +10020,187 @@ var publish_keyset_default = {
   ]
 };
 
+// manifests/mint_whitelist.json
+var mint_whitelist_default = {
+  comment: "Mint Whitelist Transaction",
+  sequence: 1,
+  feePayer: "authority",
+  gasLimit: 5e8,
+  gasPrice: 10,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
+    whitelistAddress: "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)",
+    amount: "1000"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          uleb: 5
+        },
+        {
+          uleb: "$addr(authority)"
+        },
+        {
+          uleb: "$const(whitelistAddress)"
+        },
+        {
+          uleb: "$const(amount)"
+        }
+      ]
+    }
+  ]
+};
+
+// manifests/get_allowed_mint.json
+var get_allowed_mint_default = {
+  comment: "Retrieves the allowed minting amount for a specific account.",
+  sequence: 1,
+  feePayer: "",
+  gasLimit: 5e8,
+  gasPrice: 10,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
+    address: "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          comment: "get allowed minting amount",
+          uleb: 7
+        },
+        {
+          comment: "account ot get the allowed mint for",
+          uleb: "$const(address)"
+        }
+      ]
+    }
+  ],
+  resultSchema: {
+    "$const(contractAddress)": {
+      allowedMint: "uleb(0)"
+    }
+  }
+};
+
+// manifests/get_balance.json
+var get_balance_default = {
+  comment: "Read lea account balance",
+  sequence: 1,
+  feePayer: "",
+  gasLimit: 5e8,
+  gasPrice: 10,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
+    address: "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          comment: "get lea account balance",
+          uleb: 8
+        },
+        {
+          comment: "address to get the allowed mint for",
+          uleb: "$const(address)"
+        }
+      ]
+    }
+  ],
+  resultSchema: {
+    "$const(contractAddress)": {
+      balance: "uleb(0)"
+    }
+  }
+};
+
+// manifests/get_current_supply.json
+var get_current_supply_default = {
+  comment: "Retrieves the current total supply of LEA coins.",
+  sequence: 1,
+  feePayer: "",
+  gasLimit: 5e8,
+  gasPrice: 10,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          comment: "Get current LEA supply",
+          uleb: 6
+        }
+      ]
+    }
+  ],
+  resultSchema: {
+    "$const(contractAddress)": {
+      currentSupply: "uleb(0)"
+    }
+  }
+};
+
 // src/system-program.js
+var clone = (x) => typeof structuredClone === "function" ? structuredClone(x) : JSON.parse(JSON.stringify(x));
+var withConstants = (manifest, constants) => {
+  const m = clone(manifest);
+  m.constants = { ...m.constants || {}, ...constants };
+  return m;
+};
+async function buildTxAndDecoder(baseManifest, constants = {}, signers = {}) {
+  const manifestUsed = Object.keys(constants).length ? withConstants(baseManifest, constants) : clone(baseManifest);
+  const tx = await createTransaction(manifestUsed, signers);
+  const decode2 = async (resultBuffer) => {
+    return decodeExecutionResult(resultBuffer, manifestUsed);
+  };
+  return { tx, decode: decode2 };
+}
 var SystemProgram = {
-  /**
-   * Creates a transfer transaction.
-   * @param {object} params - The parameters for the transfer.
-   * @param {object} params.fromKeyset - The keyset of the sender.
-   * @param {string} params.toAddress - The address of the receiver.
-   * @param {number | string} params.amount - The amount to transfer.
-   * @returns {Promise<Uint8Array>} The serialized transaction.
-   */
-  transfer: async ({ fromKeyset, toAddress, amount }) => {
+  transfer: async (fromKeyset, toAddress, amount) => {
     const signers = { publisher: fromKeyset };
-    const constants = {
-      receiver: toAddress,
-      amount: amount.toString()
-    };
-    return await createTransaction(transfer_default, signers, constants);
+    const constants = { receiver: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(transfer_default, constants, signers);
   },
-  /**
-   * Creates a mint transaction.
-   * @param {object} params - The parameters for the mint.
-   * @param {object} params.fromKeyset - The keyset of the minter.
-   * @param {string} params.toAddress - The address to mint to.
-   * @param {number | string} params.amount - The amount to mint.
-   * @returns {Promise<Uint8Array>} The serialized transaction.
-   */
-  mint: async ({ fromKeyset, toAddress, amount }) => {
+  mint: async (fromKeyset, toAddress, amount) => {
     const signers = { minter: fromKeyset };
-    const constants = {
-      recipient: toAddress,
-      amount: amount.toString()
-    };
-    return await createTransaction(mint_default, signers, constants);
+    const constants = { recipient: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(mint_default, constants, signers);
   },
-  /**
-   * Creates a burn transaction.
-   * @param {object} params - The parameters for the burn.
-   * @param {object} params.fromKeyset - The keyset of the burner.
-   * @param {number | string} params.amount - The amount to burn.
-   * @returns {Promise<Uint8Array>} The serialized transaction.
-   */
-  burn: async ({ fromKeyset, amount }) => {
+  burn: async (fromKeyset, amount) => {
     const signers = { burner: fromKeyset };
-    const constants = {
-      amount: amount.toString()
-    };
-    return await createTransaction(burn_default, signers, constants);
+    const constants = { amount: String(amount) };
+    return buildTxAndDecoder(burn_default, constants, signers);
   },
-  /**
-   * Creates a publish keyset transaction.
-   * @param {object} params - The parameters for publishing the keyset.
-   * @param {object} params.keyset - The keyset to publish.
-   * @returns {Promise<Uint8Array>} The serialized transaction.
-   */
-  publishKeyset: async ({ keyset }) => {
-    const signers = { publisher: keyset };
-    return await createTransaction(publish_keyset_default, signers, {});
+  publishKeyset: async (fromKeyset) => {
+    const signers = { publisher: fromKeyset };
+    return buildTxAndDecoder(publish_keyset_default, {}, signers);
+  },
+  mintWhitelist: async (fromKeyset, toAddress, amount) => {
+    const signers = { authority: fromKeyset };
+    const constants = { whitelistAddress: `$addr(${toAddress})`, amount: String(amount) };
+    return buildTxAndDecoder(mint_whitelist_default, constants, signers);
+  },
+  getAllowedMint: async (toAddress) => {
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(get_allowed_mint_default, constants, {});
+  },
+  getBalance: async (toAddress) => {
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(get_balance_default, constants, {});
+  },
+  getCurrentSupply: async () => {
+    return buildTxAndDecoder(get_current_supply_default, {}, {});
   }
 };
 
