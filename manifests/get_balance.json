@@ -7,7 +7,7 @@
   "signers": [],
   "constants": {
     "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
-    "account": "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
+    "address": "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
   },
   "invocations": [
     {
@@ -18,8 +18,8 @@
           "uleb": 8
         },
         {
-          "comment": "account ot get the allowed mint for",
-          "uleb": "$const(account)"
+          "comment": "address to get the allowed mint for",
+          "uleb": "$const(address)"
         }
       ]
     }

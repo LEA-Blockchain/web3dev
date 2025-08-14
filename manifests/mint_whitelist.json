@@ -1,13 +1,13 @@
 {
-  "comment": "Mints new LEA coins to a specified account, requiring the minter to be on a whitelist.",
+  "comment": "Mint Whitelist Transaction",
   "sequence": 1,
-  "feePayer": "minter",
+  "feePayer": "authority",
   "gasLimit": 500000000,
   "gasPrice": 10,
   "signers": [],
   "constants": {
     "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
-    "recipient": "$addr(0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef)",
+    "whitelistAddress": "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)",
     "amount": "1000"
   },
   "invocations": [
@@ -15,19 +15,18 @@
       "targetAddress": "$const(contractAddress)",
       "instructions": [
         {
-          "comment": "Mint LEA tokens with whitelist",
           "uleb": 5
         },
         {
-          "comment": "Recipient account",
-          "uleb": "$const(recipient)"
+          "uleb": "$addr(authority)"
         },
         {
-          "comment": "Amount to mint",
+          "uleb": "$const(whitelistAddress)"
+        },
+        {
           "uleb": "$const(amount)"
         }
       ]
     }
-  ],
-  "resultSchema": {}
+  ]
 }

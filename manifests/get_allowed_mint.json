@@ -6,7 +6,8 @@
   "gasPrice": 10,
   "signers": [],
   "constants": {
-    "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)"
+    "contractAddress": "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
+    "address": "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
   },
   "invocations": [
     {
@@ -18,7 +19,7 @@
         },
         {
           "comment": "account ot get the allowed mint for",
-          "uleb": "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
+          "uleb": "$const(address)"
         }
       ]
     }

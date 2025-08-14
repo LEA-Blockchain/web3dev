@@ -12,8 +12,8 @@ class ConnectionImpl {
             "mainnet-beta": "https://api.mainnet-beta.getlea.org",
             devnet: "https://api.devnet.getlea.org",
             testnet: "https://api.testnet.getlea.org",
-            local: "http://localhost:3000",
-            localhost: "http://localhost:3000",
+            local: "http://127.0.0.1:60000",
+            localhost: "http://localhost:60000",
         };
 
         if (!clusterUrls[cluster]) {
@@ -23,62 +23,34 @@ class ConnectionImpl {
         return clusterUrls[cluster];
     }
 
-    async _sendRequest(method, params) {
-        const requestBody = {
-            jsonrpc: "1.0",
-            id: 1,
-            method,
-        };
-        if (params !== undefined) {
-            requestBody.params = params;
+    /**
+     * Sends raw binary data (Uint8Array) via POST and returns:
+     * - Uint8Array if there is a binary body
+     * - true if body is empty
+     */
+    async sendTransaction(uint8Data) {
+        if (!(uint8Data instanceof Uint8Array)) {
+            throw new Error("sendBinary expects a Uint8Array");
         }
 
-        const response = await fetch(this.url, {
+        const response = await fetch(`${this.url}/execute`, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json",
-                // is not kept alive and reused for the next request.
-                // PQC signatutres take a long time to compute, so we want to avoid broken pipe
+                "Content-Type": "application/octet-stream",
                 "Connection": "close"
             },
-            body: JSON.stringify(requestBody),
+            body: uint8Data
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+        // Always try to read as binary, even for non-2xx
+        const arrayBuffer = await response.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+
+        if (uint8.length === 0) {
+            return true; // no body, just signal "OK but empty"
         }
 
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(`RPC error: ${data.error.message} (Code: ${data.error.code})`);
-        }
-
-        if (data.result === undefined) {
-            throw new Error(`Malformed response: Missing 'result' field.`);
-        }
-
-        return data.result;
-    }
-
-    // --- Public API Methods ---
-    getVersion() { return this._sendRequest("getVersion"); }
-    getLatestBlockhash() { return this._sendRequest("getLatestBlockhash"); }
-    getBalance(keys) { return this._sendRequest("getBalance", keys); }
-    getTransaction(id) { return this._sendRequest("getTransaction", [id]); }
-    getTransactionsForAccount(opts) { return this._sendRequest("getTransactionsForAccount", [opts]); }
-
-    sendTransaction(txInput) {
-        let paramsForServer;
-        if (typeof txInput === 'string') {
-            paramsForServer = [txInput];
-        } else if (Array.isArray(txInput) && txInput.length === 1 && typeof txInput[0] === 'string') {
-            paramsForServer = txInput;
-        } else {
-            return Promise.reject(new Error("Invalid input for sendTransaction: Expected a hex string or an array containing a single hex string."));
-        }
-        return this._sendRequest("sendTransaction", paramsForServer);
+        return uint8;
     }
 }
 
