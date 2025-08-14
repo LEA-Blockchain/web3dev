@@ -2,6 +2,9 @@ import { HDKey } from './hd.js';
 import { mnemonicToSeed } from './bip39.js';
 import { LEA_DERIVATION_BASE } from './constants.js';
 import { generateKeyset } from '@leachain/keygen';
+import { createTransaction } from '@leachain/ltm';
+import signTimestampManifest from '../manifests/sign_timestamp.json' with { type: 'json' };
+import { bytesToHex } from './utils.js';
 
 export class WalletImpl {
     #hdKey;
@@ -40,6 +43,16 @@ export class WalletImpl {
             keyset,
             address,
         };
+    }
+
+    async signTimestamp(signTimestamp, accountIndex = 0) {
+        console.log("signTimestamp:", signTimestamp);
+        const account = await this.getAccount(accountIndex);
+        const signers = { publisher: account.keyset };
+       
+        signTimestampManifest.constants.timestamp = String(signTimestamp);
+        const tx = await createTransaction(signTimestampManifest, signers);
+        return bytesToHex(tx);
     }
 
 }

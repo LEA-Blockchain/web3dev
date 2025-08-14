@@ -9,10 +9,15 @@ const ACCOUNT_INDEX = 0;
         // --- Generate mnemonic test
         //const mnemonic = generateMnemonic();
         //console.log("Generated Mnemonic:", mnemonic);
-
         // 1. Setup Wallet and Account
         console.log("--- Wallet Setup ---");
         const wallet = await Wallet.fromMnemonic(MNEMONIC);
+
+        //Authenicate timestamp
+        console.log("\n\n--- Authenticating Timestamp ---");
+        const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
+        console.log("Signed Timestamp:", signTimestamp);
+
         //const wallet = await Wallet.fromMnemonic(mnemonic);
         const account = await wallet.getAccount(ACCOUNT_INDEX);
         //lea1sv9d4ayz8lm4mjxnxdu42c23g0jpk7w7r3g2euvug5ltn4wfnffq8pnjnn

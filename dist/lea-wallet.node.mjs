@@ -6219,124 +6219,6 @@ async function generateKeyset(masterSeed = null) {
   return { keyset, address, addressHex };
 }
 
-// src/wallet.js
-var WalletImpl = class {
-  #hdKey;
-  constructor(hdKey) {
-    if (!(hdKey instanceof HDKey)) {
-      console.error("Invalid masterKey:", hdKey);
-      throw new Error("Invalid masterKey: must be an instance of HDKey.");
-    }
-    this.#hdKey = hdKey;
-  }
-  /** Derives an keyset using a BIP-44 path. */
-  async deriveAccount(index) {
-    try {
-      const derivedKey = await this.#hdKey.derive(`${LEA_DERIVATION_BASE}/${index}'`);
-      return await generateKeyset(derivedKey);
-    } catch (error) {
-      throw new Error(`Failed to derive account for path ${index}: ${error.message}`);
-    }
-  }
-  /**
-   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
-  * and derives a unified address from both public keys.
-  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
-  */
-  async getAccount(index) {
-    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
-      throw new Error("Account index must be a non-negative integer.");
-    }
-    const { keyset, address } = await this.deriveAccount(index);
-    return {
-      keyset,
-      address
-    };
-  }
-};
-var Wallet = {
-  /**
-   * Creates a wallet from a BIP-39 mnemonic phrase.
-   * @param {string} mnemonic - The seed phrase.
-   * @param {string} [passphrase] - Optional BIP-39 passphrase.
-   */
-  fromMnemonic: async (mnemonic, passphrase) => {
-    const seed = await mnemonicToSeed(mnemonic, passphrase);
-    const masterKey = await HDKey.fromMasterSeed(seed);
-    return new WalletImpl(masterKey);
-  }
-};
-
-// src/connection.js
-var ConnectionImpl = class {
-  constructor(cluster = "devnet") {
-    this.url = this._resolveClusterUrl(cluster);
-  }
-  _resolveClusterUrl(cluster) {
-    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) return cluster;
-    const clusterUrls = {
-      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
-      devnet: "https://api.devnet.getlea.org",
-      testnet: "https://api.testnet.getlea.org",
-      local: "http://127.0.0.1:60000",
-      localhost: "http://localhost:60000"
-    };
-    if (!clusterUrls[cluster]) throw new Error(`Unknown cluster: ${cluster}`);
-    return clusterUrls[cluster];
-  }
-  /**
-   * Sends a transaction and returns a result object:
-   * {
-   *   ok: boolean,               // response.ok
-   *   status: number,            // HTTP status
-   *   decoded: any | null,       // decoded body (if any and decode succeeded)
-   *   raw: Uint8Array,           // raw body (possibly length 0)
-   *   decodeError: Error | null, // error thrown during decode (if any)
-   *   responseHeaders: Headers   // fetch Headers instance
-   * }
-   *
-   * - Network failures still throw (so you can distinguish transport vs. server error).
-   * - Server errors (non-2xx) return ok:false but still try to decode.
-   */
-  async sendTransaction(txObject) {
-    const { tx, decode: decode2 } = txObject;
-    if (!(tx instanceof Uint8Array)) {
-      throw new Error("sendTransaction expects tx to be a Uint8Array");
-    }
-    if (typeof decode2 !== "function") {
-      throw new Error("sendTransaction expects a decode(resultBuffer) function");
-    }
-    const response = await fetch(`${this.url}/execute`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Connection": "close"
-      },
-      body: tx
-    });
-    const arrayBuffer = await response.arrayBuffer();
-    const raw = new Uint8Array(arrayBuffer);
-    let decoded = null;
-    let decodeError = null;
-    if (raw.length > 0) {
-      try {
-        decoded = await decode2(raw);
-      } catch (e) {
-        decodeError = e instanceof Error ? e : new Error(String(e));
-      }
-    }
-    return {
-      ok: response.ok,
-      status: response.status,
-      decoded,
-      raw,
-      decodeError,
-      responseHeaders: response.headers
-    };
-  }
-};
-var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
-
 // ../ltm/dist/ltm.node.mjs
 import { randomBytes as randomBytes3 } from "crypto";
 var __create2 = Object.create;
@@ -9889,6 +9771,305 @@ async function createTransaction(manifest, signerKeys) {
   return finalTransaction;
 }
 
+// manifests/sign_timestamp.json
+var sign_timestamp_default = {
+  comment: "This LTM simply acts as a wrapper for our internal server authentication.",
+  sequence: 1,
+  feePayer: "publisher",
+  gasLimit: 0,
+  gasPrice: 0,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111110)",
+    timestamp: "1"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          comment: "Timestamp",
+          uleb: "$const(timestamp)"
+        },
+        {
+          INLINE: "$pubset(publisher)"
+        }
+      ]
+    }
+  ]
+};
+
+// src/utils.js
+function areUint8ArraysEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length || !(a instanceof Uint8Array) || !(b instanceof Uint8Array)) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+var KeyList = class {
+  _keys = [];
+  // You are using a mix of conventions: _keys (older private convention) and #count/#maxSize (JS private fields)
+  #count = 0;
+  #maxSize;
+  /**
+   * Creates an instance of KeyList.
+   * @param {number} [maxSize=15] - The maximum number of keys the list can hold.
+   */
+  constructor(maxSize = 15) {
+    if (typeof maxSize !== "number" || maxSize <= 0) {
+      throw new Error("KeyList: maxSize must be a positive number.");
+    }
+    this.#maxSize = maxSize;
+  }
+  /**
+   * Resolves a key input into a Uint8Array.
+   * @param {Uint8Array | { toBytes: () => Uint8Array } | any} key - The key to resolve.
+   * @returns {Uint8Array} The resolved key as a Uint8Array.
+   * @throws {Error} If the key is invalid or not a 32-byte Uint8Array.
+   * @private
+   */
+  #resolveKey(key) {
+    let bytes = null;
+    if (Object.prototype.toString.call(key) === "[object Uint8Array]") {
+      bytes = key;
+    } else if (key && typeof key === "object" && typeof key.toBytes === "function") {
+      const potentialBytes = key.toBytes();
+      if (Object.prototype.toString.call(potentialBytes) === "[object Uint8Array]") {
+        bytes = potentialBytes;
+      }
+    }
+    if (!bytes) {
+      throw new Error("KeyList: Invalid key type. Key must resolve to a Uint8Array.");
+    }
+    if (bytes.length !== 32) {
+      throw new Error(
+        `KeyList: Key must be a 32-byte Uint8Array, but received ${bytes.length} bytes.`
+      );
+    }
+    return bytes;
+  }
+  /**
+   * Adds a key to the list.
+   * If the key already exists, its index is returned.
+   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to add.
+   * @returns {number} The index of the added or existing key.
+   * @throws {Error} If the list is at maximum capacity.
+   */
+  add(key) {
+    const bytes = this.#resolveKey(key);
+    for (let i = 0; i < this.#count; i++) {
+      if (areUint8ArraysEqual(bytes, this._keys[i])) {
+        return i;
+      }
+    }
+    if (this.#count >= this.#maxSize) {
+      throw new Error(`KeyList: Cannot add key, maximum capacity (${this.#maxSize}) reached.`);
+    }
+    this._keys[this.#count] = bytes;
+    return this.#count++;
+  }
+  /**
+   * Checks if a key exists in the list and returns its index if found.
+   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to check.
+   * @returns {number | false} The index of the key if found, otherwise false.
+   */
+  hasKey(key) {
+    try {
+      const bytesToFind = this.#resolveKey(key);
+      for (let i = 0; i < this.#count; i++) {
+        if (areUint8ArraysEqual(bytesToFind, this._keys[i])) {
+          return i;
+        }
+      }
+    } catch (error) {
+      console.warn("KeyList.hasKey: Could not resolve key:", error.message);
+      return false;
+    }
+    return false;
+  }
+  /**
+   * Gets a shallow copy of the keys currently in the list.
+   * @returns {Uint8Array[]} An array of Uint8Array keys.
+   _
+   */
+  getKeys() {
+    return this._keys.slice(0, this.#count);
+  }
+  /**
+   * Gets the current number of keys in the list.
+   * @returns {number}
+   */
+  get count() {
+    return this.#count;
+  }
+  /**
+   * Gets the maximum capacity of the list.
+   * @returns {number}
+   */
+  get maxSize() {
+    return this.#maxSize;
+  }
+};
+function combineUint8Arrays(arrays) {
+  return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
+}
+function uint8ArrayToBase64(uint8Array) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(uint8Array).toString("base64");
+  } else {
+    let binary = "";
+    const len = uint8Array.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(uint8Array[i]);
+    }
+    return btoa(binary);
+  }
+}
+function base64ToUint8Array(base64String) {
+  if (typeof Buffer !== "undefined") {
+    const buf = Buffer.from(base64String, "base64");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
+  } else {
+    const binaryString = atob(base64String);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  }
+}
+
+// src/wallet.js
+var WalletImpl = class {
+  #hdKey;
+  constructor(hdKey) {
+    if (!(hdKey instanceof HDKey)) {
+      console.error("Invalid masterKey:", hdKey);
+      throw new Error("Invalid masterKey: must be an instance of HDKey.");
+    }
+    this.#hdKey = hdKey;
+  }
+  /** Derives an keyset using a BIP-44 path. */
+  async deriveAccount(index) {
+    try {
+      const derivedKey = await this.#hdKey.derive(`${LEA_DERIVATION_BASE}/${index}'`);
+      return await generateKeyset(derivedKey);
+    } catch (error) {
+      throw new Error(`Failed to derive account for path ${index}: ${error.message}`);
+    }
+  }
+  /**
+   * Creates a full account, including EdDSA and post-quantum SLH-DSA keys,
+  * and derives a unified address from both public keys.
+  * @param {number} index - The hardened account index (e.g., 0, 1, 2...).
+  */
+  async getAccount(index) {
+    if (typeof index !== "number" || index < 0 || !Number.isInteger(index)) {
+      throw new Error("Account index must be a non-negative integer.");
+    }
+    const { keyset, address } = await this.deriveAccount(index);
+    return {
+      keyset,
+      address
+    };
+  }
+  async signTimestamp(signTimestamp, accountIndex = 0) {
+    console.log("signTimestamp:", signTimestamp);
+    const account = await this.getAccount(accountIndex);
+    const signers = { publisher: account.keyset };
+    sign_timestamp_default.constants.timestamp = String(signTimestamp);
+    const tx = await createTransaction(sign_timestamp_default, signers);
+    return bytesToHex(tx);
+  }
+};
+var Wallet = {
+  /**
+   * Creates a wallet from a BIP-39 mnemonic phrase.
+   * @param {string} mnemonic - The seed phrase.
+   * @param {string} [passphrase] - Optional BIP-39 passphrase.
+   */
+  fromMnemonic: async (mnemonic, passphrase) => {
+    const seed = await mnemonicToSeed(mnemonic, passphrase);
+    const masterKey = await HDKey.fromMasterSeed(seed);
+    return new WalletImpl(masterKey);
+  }
+};
+
+// src/connection.js
+var ConnectionImpl = class {
+  constructor(cluster = "devnet") {
+    this.url = this._resolveClusterUrl(cluster);
+  }
+  _resolveClusterUrl(cluster) {
+    if (typeof cluster === "string" && /^https?:\/\//i.test(cluster)) return cluster;
+    const clusterUrls = {
+      "mainnet-beta": "https://api.mainnet-beta.getlea.org",
+      devnet: "https://api.devnet.getlea.org",
+      testnet: "https://api.testnet.getlea.org",
+      local: "http://127.0.0.1:60000",
+      localhost: "http://localhost:60000"
+    };
+    if (!clusterUrls[cluster]) throw new Error(`Unknown cluster: ${cluster}`);
+    return clusterUrls[cluster];
+  }
+  /**
+   * Sends a transaction and returns a result object:
+   * {
+   *   ok: boolean,               // response.ok
+   *   status: number,            // HTTP status
+   *   decoded: any | null,       // decoded body (if any and decode succeeded)
+   *   raw: Uint8Array,           // raw body (possibly length 0)
+   *   decodeError: Error | null, // error thrown during decode (if any)
+   *   responseHeaders: Headers   // fetch Headers instance
+   * }
+   *
+   * - Network failures still throw (so you can distinguish transport vs. server error).
+   * - Server errors (non-2xx) return ok:false but still try to decode.
+   */
+  async sendTransaction(txObject) {
+    const { tx, decode: decode2 } = txObject;
+    if (!(tx instanceof Uint8Array)) {
+      throw new Error("sendTransaction expects tx to be a Uint8Array");
+    }
+    if (typeof decode2 !== "function") {
+      throw new Error("sendTransaction expects a decode(resultBuffer) function");
+    }
+    const response = await fetch(`${this.url}/execute`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Connection": "close"
+      },
+      body: tx
+    });
+    const arrayBuffer = await response.arrayBuffer();
+    const raw = new Uint8Array(arrayBuffer);
+    let decoded = null;
+    let decodeError = null;
+    if (raw.length > 0) {
+      try {
+        decoded = await decode2(raw);
+      } catch (e) {
+        decodeError = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      decoded,
+      raw,
+      decodeError,
+      responseHeaders: response.headers
+    };
+  }
+};
+var Connection = (cluster = "devnet") => new ConnectionImpl(cluster);
+
 // manifests/transfer.json
 var transfer_default = {
   comment: "transfers lea coins from 1 to another account",
@@ -10211,151 +10392,6 @@ var SystemProgram = {
     return buildTxAndDecoder(get_current_supply_default, {}, {});
   }
 };
-
-// src/utils.js
-function areUint8ArraysEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b || a.length !== b.length || !(a instanceof Uint8Array) || !(b instanceof Uint8Array)) {
-    return false;
-  }
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-var KeyList = class {
-  _keys = [];
-  // You are using a mix of conventions: _keys (older private convention) and #count/#maxSize (JS private fields)
-  #count = 0;
-  #maxSize;
-  /**
-   * Creates an instance of KeyList.
-   * @param {number} [maxSize=15] - The maximum number of keys the list can hold.
-   */
-  constructor(maxSize = 15) {
-    if (typeof maxSize !== "number" || maxSize <= 0) {
-      throw new Error("KeyList: maxSize must be a positive number.");
-    }
-    this.#maxSize = maxSize;
-  }
-  /**
-   * Resolves a key input into a Uint8Array.
-   * @param {Uint8Array | { toBytes: () => Uint8Array } | any} key - The key to resolve.
-   * @returns {Uint8Array} The resolved key as a Uint8Array.
-   * @throws {Error} If the key is invalid or not a 32-byte Uint8Array.
-   * @private
-   */
-  #resolveKey(key) {
-    let bytes = null;
-    if (Object.prototype.toString.call(key) === "[object Uint8Array]") {
-      bytes = key;
-    } else if (key && typeof key === "object" && typeof key.toBytes === "function") {
-      const potentialBytes = key.toBytes();
-      if (Object.prototype.toString.call(potentialBytes) === "[object Uint8Array]") {
-        bytes = potentialBytes;
-      }
-    }
-    if (!bytes) {
-      throw new Error("KeyList: Invalid key type. Key must resolve to a Uint8Array.");
-    }
-    if (bytes.length !== 32) {
-      throw new Error(
-        `KeyList: Key must be a 32-byte Uint8Array, but received ${bytes.length} bytes.`
-      );
-    }
-    return bytes;
-  }
-  /**
-   * Adds a key to the list.
-   * If the key already exists, its index is returned.
-   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to add.
-   * @returns {number} The index of the added or existing key.
-   * @throws {Error} If the list is at maximum capacity.
-   */
-  add(key) {
-    const bytes = this.#resolveKey(key);
-    for (let i = 0; i < this.#count; i++) {
-      if (areUint8ArraysEqual(bytes, this._keys[i])) {
-        return i;
-      }
-    }
-    if (this.#count >= this.#maxSize) {
-      throw new Error(`KeyList: Cannot add key, maximum capacity (${this.#maxSize}) reached.`);
-    }
-    this._keys[this.#count] = bytes;
-    return this.#count++;
-  }
-  /**
-   * Checks if a key exists in the list and returns its index if found.
-   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to check.
-   * @returns {number | false} The index of the key if found, otherwise false.
-   */
-  hasKey(key) {
-    try {
-      const bytesToFind = this.#resolveKey(key);
-      for (let i = 0; i < this.#count; i++) {
-        if (areUint8ArraysEqual(bytesToFind, this._keys[i])) {
-          return i;
-        }
-      }
-    } catch (error) {
-      console.warn("KeyList.hasKey: Could not resolve key:", error.message);
-      return false;
-    }
-    return false;
-  }
-  /**
-   * Gets a shallow copy of the keys currently in the list.
-   * @returns {Uint8Array[]} An array of Uint8Array keys.
-   _
-   */
-  getKeys() {
-    return this._keys.slice(0, this.#count);
-  }
-  /**
-   * Gets the current number of keys in the list.
-   * @returns {number}
-   */
-  get count() {
-    return this.#count;
-  }
-  /**
-   * Gets the maximum capacity of the list.
-   * @returns {number}
-   */
-  get maxSize() {
-    return this.#maxSize;
-  }
-};
-function combineUint8Arrays(arrays) {
-  return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
-}
-function uint8ArrayToBase64(uint8Array) {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(uint8Array).toString("base64");
-  } else {
-    let binary = "";
-    const len = uint8Array.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
-    }
-    return btoa(binary);
-  }
-}
-function base64ToUint8Array(base64String) {
-  if (typeof Buffer !== "undefined") {
-    const buf = Buffer.from(base64String, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
-  } else {
-    const binaryString = atob(base64String);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-  }
-}
 export {
   ADDRESS_HRP,
   BIP44_PURPOSE,
