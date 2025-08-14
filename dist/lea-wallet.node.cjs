@@ -9947,30 +9947,21 @@ function combineUint8Arrays(arrays) {
   return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
 }
 function uint8ArrayToBase64(uint8Array) {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(uint8Array).toString("base64");
-  } else {
-    let binary = "";
-    const len = uint8Array.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(uint8Array[i]);
-    }
-    return btoa(binary);
+  let binary = "";
+  const len = uint8Array.length;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
   }
+  return btoa(binary);
 }
-function base64ToUint8Array(base64String) {
-  if (typeof Buffer !== "undefined") {
-    const buf = Buffer.from(base64String, "base64");
-    return new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
-  } else {
-    const binaryString = atob(base64String);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
+function base64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
   }
+  return bytes;
 }
 
 // src/wallet.js
@@ -10008,7 +9999,7 @@ var WalletImpl = class {
     const signers = { publisher: account.keyset };
     sign_timestamp_default.constants.timestamp = String(signTimestamp);
     const tx = await createTransaction(sign_timestamp_default, signers);
-    return bytesToHex(tx);
+    return uint8ArrayToBase64(tx);
   }
 };
 var Wallet = {
