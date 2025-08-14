@@ -25,7 +25,7 @@ const ACCOUNT_INDEX = 0;
 
         console.log("\n\n--- Creating PublishKeyPair Transaction ---");
 
-        const connection = Connection("local");
+        const connection = Connection("devnet");
 
         //!!! mint coins need to be whitelisted first!!!
 
