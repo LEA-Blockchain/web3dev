@@ -9331,7 +9331,7 @@ function hexToBytes2(hex) {
   return bytes;
 }
 function bytesToHex(bytes) {
-  return Buffer.from(bytes).toString("hex");
+  return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
 }
 function compareByteArrays(a, b) {
   const len = Math.min(a.length, b.length);
@@ -9613,6 +9613,9 @@ function appendSignatures(encoder, signatures) {
     encoder.addVector(sig.falcon512);
   }
 }
+function bytesToHex2(bytes) {
+  return bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, "0"), "");
+}
 var SCHEMA_REGEX = /^(uleb|sleb|vector)\((\d+)\)$/;
 async function parseResultSchema(manifest) {
   if (!manifest.resultSchema) {
@@ -9640,7 +9643,7 @@ async function parseResultSchema(manifest) {
       console.warn(`[WARN] Could not resolve address for schema key: ${programIdKey}`);
       continue;
     }
-    const programIdHex = Buffer.from(resolved.addresses[addressIndex]).toString("hex");
+    const programIdHex = bytesToHex2(resolved.addresses[addressIndex]);
     const fieldMap = /* @__PURE__ */ new Map();
     const schemaFields = manifest.resultSchema[programIdKey];
     for (const fieldName in schemaFields) {
@@ -9666,7 +9669,7 @@ async function decodeExecutionResult(resultBuffer, manifest) {
   const results = /* @__PURE__ */ new Map();
   while (decoder.hasNext()) {
     const programId = decoder.readVector();
-    const programIdHex = Buffer.from(programId).toString("hex");
+    const programIdHex = bytesToHex2(programId);
     const entryCount = Number(decoder.readUleb128());
     const programSchema = schema.get(programIdHex);
     const decodedObject = {};
