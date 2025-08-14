@@ -4724,7 +4724,6 @@ __export(index_exports, {
   ADDRESS_HRP: () => ADDRESS_HRP,
   BIP44_PURPOSE: () => BIP44_PURPOSE,
   Connection: () => Connection,
-  KeyList: () => KeyList,
   LEA_COIN_TYPE: () => LEA_COIN_TYPE,
   LEA_DERIVATION_BASE: () => LEA_DERIVATION_BASE,
   LEA_SYSTEM_PROGRAM: () => LEA_SYSTEM_PROGRAM,
@@ -4732,13 +4731,9 @@ __export(index_exports, {
   Wallet: () => Wallet,
   areUint8ArraysEqual: () => areUint8ArraysEqual,
   base64ToUint8Array: () => base64ToUint8Array,
-  bytesToHex: () => bytesToHex,
   combineUint8Arrays: () => combineUint8Arrays,
   generateMnemonic: () => generateMnemonic,
-  hexToBytes: () => hexToBytes2,
-  randomBytes: () => randomBytes,
-  uint8ArrayToBase64: () => uint8ArrayToBase64,
-  utf8ToBytes: () => utf8ToBytes2
+  uint8ArrayToBase64: () => uint8ArrayToBase64
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -4956,52 +4951,6 @@ function createView(arr) {
 }
 function rotr(word, shift) {
   return word << 32 - shift | word >>> shift;
-}
-var hasHexBuiltin = /* @__PURE__ */ (() => (
-  // @ts-ignore
-  typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function"
-))();
-var hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
-function bytesToHex(bytes) {
-  abytes(bytes);
-  if (hasHexBuiltin)
-    return bytes.toHex();
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += hexes[bytes[i]];
-  }
-  return hex;
-}
-var asciis = { _0: 48, _9: 57, A: 65, F: 70, a: 97, f: 102 };
-function asciiToBase16(ch) {
-  if (ch >= asciis._0 && ch <= asciis._9)
-    return ch - asciis._0;
-  if (ch >= asciis.A && ch <= asciis.F)
-    return ch - (asciis.A - 10);
-  if (ch >= asciis.a && ch <= asciis.f)
-    return ch - (asciis.a - 10);
-  return;
-}
-function hexToBytes2(hex) {
-  if (typeof hex !== "string")
-    throw new Error("hex string expected, got " + typeof hex);
-  if (hasHexBuiltin)
-    return Uint8Array.fromHex(hex);
-  const hl = hex.length;
-  const al = hl / 2;
-  if (hl % 2)
-    throw new Error("hex string expected, got unpadded hex of length " + hl);
-  const array = new Uint8Array(al);
-  for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
-    const n1 = asciiToBase16(hex.charCodeAt(hi));
-    const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
-    if (n1 === void 0 || n2 === void 0) {
-      const char = hex[hi] + hex[hi + 1];
-      throw new Error('hex string expected, got non-hex character "' + char + '" at index ' + hi);
-    }
-    array[ai] = n1 * 16 + n2;
-  }
-  return array;
 }
 function utf8ToBytes2(str) {
   if (typeof str !== "string")
@@ -9364,7 +9313,7 @@ var PkmiCryptoHandler = class _PkmiCryptoHandler {
     };
   }
 };
-function hexToBytes3(hex) {
+function hexToBytes2(hex) {
   if (typeof hex !== "string") {
     throw new TypeError("hexToBytes: expected string, got " + typeof hex);
   }
@@ -9381,7 +9330,7 @@ function hexToBytes3(hex) {
   }
   return bytes;
 }
-function bytesToHex2(bytes) {
+function bytesToHex(bytes) {
   return Buffer.from(bytes).toString("hex");
 }
 function compareByteArrays(a, b) {
@@ -9397,7 +9346,7 @@ function decodeAddress(addressStr) {
   if (addressStr.startsWith("lea1")) {
     return decode("lea", addressStr);
   }
-  return hexToBytes3(addressStr);
+  return hexToBytes2(addressStr);
 }
 function _resolveConstants(obj, constants) {
   if (obj instanceof Uint8Array) {
@@ -9466,9 +9415,9 @@ function _createCanonicalAddressListAndIndexMap(literalAddressSet, constResolved
     const nonSignerLiterals2 = [...literalAddressSet];
     const nonSignerBytes2 = nonSignerLiterals2.map(decodeAddress).sort(compareByteArrays);
     const literalAddressIndexMap2 = /* @__PURE__ */ new Map();
-    const addressMapByHex2 = new Map(nonSignerBytes2.map((bytes, i) => [bytesToHex2(bytes), i]));
+    const addressMapByHex2 = new Map(nonSignerBytes2.map((bytes, i) => [bytesToHex(bytes), i]));
     for (const literalAddress of literalAddressSet) {
-      const hex = bytesToHex2(decodeAddress(literalAddress));
+      const hex = bytesToHex(decodeAddress(literalAddress));
       const index = addressMapByHex2.get(hex);
       if (index !== void 0) {
         literalAddressIndexMap2.set(literalAddress, index);
@@ -9488,10 +9437,10 @@ function _createCanonicalAddressListAndIndexMap(literalAddressSet, constResolved
   const nonSignerBytes = nonSignerLiterals.map(decodeAddress).sort(compareByteArrays);
   const finalAddressListBytes = [feePayerBytes, ...otherSignerBytes, ...nonSignerBytes];
   const literalAddressIndexMap = /* @__PURE__ */ new Map();
-  const addressMapByHex = new Map(finalAddressListBytes.map((bytes, i) => [bytesToHex2(bytes), i]));
+  const addressMapByHex = new Map(finalAddressListBytes.map((bytes, i) => [bytesToHex(bytes), i]));
   const allKnownLiterals = /* @__PURE__ */ new Set([...literalAddressSet, ...signerLiteralAddresses]);
   for (const literalAddress of allKnownLiterals) {
-    const hex = bytesToHex2(decodeAddress(literalAddress));
+    const hex = bytesToHex(decodeAddress(literalAddress));
     const index = addressMapByHex.get(hex);
     if (index !== void 0) {
       literalAddressIndexMap.set(literalAddress, index);
@@ -9839,110 +9788,6 @@ function areUint8ArraysEqual(a, b) {
   }
   return true;
 }
-var KeyList = class {
-  _keys = [];
-  // You are using a mix of conventions: _keys (older private convention) and #count/#maxSize (JS private fields)
-  #count = 0;
-  #maxSize;
-  /**
-   * Creates an instance of KeyList.
-   * @param {number} [maxSize=15] - The maximum number of keys the list can hold.
-   */
-  constructor(maxSize = 15) {
-    if (typeof maxSize !== "number" || maxSize <= 0) {
-      throw new Error("KeyList: maxSize must be a positive number.");
-    }
-    this.#maxSize = maxSize;
-  }
-  /**
-   * Resolves a key input into a Uint8Array.
-   * @param {Uint8Array | { toBytes: () => Uint8Array } | any} key - The key to resolve.
-   * @returns {Uint8Array} The resolved key as a Uint8Array.
-   * @throws {Error} If the key is invalid or not a 32-byte Uint8Array.
-   * @private
-   */
-  #resolveKey(key) {
-    let bytes = null;
-    if (Object.prototype.toString.call(key) === "[object Uint8Array]") {
-      bytes = key;
-    } else if (key && typeof key === "object" && typeof key.toBytes === "function") {
-      const potentialBytes = key.toBytes();
-      if (Object.prototype.toString.call(potentialBytes) === "[object Uint8Array]") {
-        bytes = potentialBytes;
-      }
-    }
-    if (!bytes) {
-      throw new Error("KeyList: Invalid key type. Key must resolve to a Uint8Array.");
-    }
-    if (bytes.length !== 32) {
-      throw new Error(
-        `KeyList: Key must be a 32-byte Uint8Array, but received ${bytes.length} bytes.`
-      );
-    }
-    return bytes;
-  }
-  /**
-   * Adds a key to the list.
-   * If the key already exists, its index is returned.
-   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to add.
-   * @returns {number} The index of the added or existing key.
-   * @throws {Error} If the list is at maximum capacity.
-   */
-  add(key) {
-    const bytes = this.#resolveKey(key);
-    for (let i = 0; i < this.#count; i++) {
-      if (areUint8ArraysEqual(bytes, this._keys[i])) {
-        return i;
-      }
-    }
-    if (this.#count >= this.#maxSize) {
-      throw new Error(`KeyList: Cannot add key, maximum capacity (${this.#maxSize}) reached.`);
-    }
-    this._keys[this.#count] = bytes;
-    return this.#count++;
-  }
-  /**
-   * Checks if a key exists in the list and returns its index if found.
-   * @param {Uint8Array | { toBytes: () => Uint8Array }} key - The key to check.
-   * @returns {number | false} The index of the key if found, otherwise false.
-   */
-  hasKey(key) {
-    try {
-      const bytesToFind = this.#resolveKey(key);
-      for (let i = 0; i < this.#count; i++) {
-        if (areUint8ArraysEqual(bytesToFind, this._keys[i])) {
-          return i;
-        }
-      }
-    } catch (error) {
-      console.warn("KeyList.hasKey: Could not resolve key:", error.message);
-      return false;
-    }
-    return false;
-  }
-  /**
-   * Gets a shallow copy of the keys currently in the list.
-   * @returns {Uint8Array[]} An array of Uint8Array keys.
-   _
-   */
-  getKeys() {
-    return this._keys.slice(0, this.#count);
-  }
-  /**
-   * Gets the current number of keys in the list.
-   * @returns {number}
-   */
-  get count() {
-    return this.#count;
-  }
-  /**
-   * Gets the maximum capacity of the list.
-   * @returns {number}
-   */
-  get maxSize() {
-    return this.#maxSize;
-  }
-};
 function combineUint8Arrays(arrays) {
   return new Uint8Array(arrays.reduce((acc, val) => (acc.push(...val), acc), []));
 }
@@ -10412,7 +10257,6 @@ var SystemProgram = {
   ADDRESS_HRP,
   BIP44_PURPOSE,
   Connection,
-  KeyList,
   LEA_COIN_TYPE,
   LEA_DERIVATION_BASE,
   LEA_SYSTEM_PROGRAM,
@@ -10420,13 +10264,9 @@ var SystemProgram = {
   Wallet,
   areUint8ArraysEqual,
   base64ToUint8Array,
-  bytesToHex,
   combineUint8Arrays,
   generateMnemonic,
-  hexToBytes,
-  randomBytes,
-  uint8ArrayToBase64,
-  utf8ToBytes
+  uint8ArrayToBase64
 });
 /*! Bundled license information:
 
