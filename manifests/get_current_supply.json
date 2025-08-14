@@ -1,7 +1,7 @@
 {
-  "comment": "Publishes the public keys of the feePayer to the contract.",
+  "comment": "Retrieves the current total supply of LEA coins.",
   "sequence": 1,
-  "feePayer": "publisher",
+  "feePayer": "",
   "gasLimit": 500000000,
   "gasPrice": 10,
   "signers": [],
@@ -13,12 +13,15 @@
       "targetAddress": "$const(contractAddress)",
       "instructions": [
         {
-          "uleb": 1
-        },
-        {
-          "INLINE": "$pubset(publisher)"
+          "comment": "Get current LEA supply",
+          "uleb": 6
         }
       ]
     }
-  ]
+  ],
+  "resultSchema": {
+    "$const(contractAddress)": {
+      "currentSupply": "uleb(0)"
+    }
+  }
 }

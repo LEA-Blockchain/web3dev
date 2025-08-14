@@ -1,8 +1,9 @@
-import { Wallet } from './src/index.js';
+import { Wallet } from '../src/index.js';
 import { createTransaction } from '@leachain/ltm';
 import { generateKeyset } from '@leachain/keygen';
-//import { decodeAndLogCteTransaction } from './src/debug-utils.js';
-import publishKeySetManifest from './manifests/publish_keyset.json' with { type: 'json' };
+import publishKeySetManifest from '../manifests/publish_keyset.json' with { type: 'json' };
+import transferManifest from '../manifests/transfer.json' with { type: 'json' };
+import fs from 'fs';
 
 // --- Configuration ---
 const MNEMONIC = "legal winner thank year wave sausage worth useful legal winner thank yellow";
@@ -23,9 +24,11 @@ const ACCOUNT_INDEX = 0;
         const signerKeys = {
             publisher: account.keyset
         };
-        const transactionBytes = await createTransaction(publishKeySetManifest, signerKeys);
+        const transactionBytes = await createTransaction(transferManifest, signerKeys);
         console.log('Output:', transactionBytes);
-
+        //write to file
+        fs.writeFileSync('transfer_transaction.bin', transactionBytes);
+        console.log('Transaction bytes written to transfer_transaction.bin');
         process.exit();
 
     } catch (error) {
