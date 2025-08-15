@@ -33,7 +33,8 @@ class ConnectionImpl {
    * - Server errors (non-2xx) return ok:false but still try to decode.
    */
   async sendTransaction(txObject) {
-    const { tx, decode } = txObject;
+    const { tx: { tx, txId }, decode } = txObject;
+
     if (!(tx instanceof Uint8Array)) {
       throw new Error("sendTransaction expects tx to be a Uint8Array");
     }
@@ -72,6 +73,7 @@ class ConnectionImpl {
       raw,
       decodeError,
       responseHeaders: response.headers,
+      txId
     };
   }
 }

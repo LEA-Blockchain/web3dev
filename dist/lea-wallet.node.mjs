@@ -9708,7 +9708,8 @@ async function createTransaction(manifest, signerKeys) {
   hasher.update(pod);
   hasher.update(preSigPayloadBytes);
   const txHash = hasher.digest("binary");
-  console.log(`[INFO] Transaction Hash (for signing): ${toHexString(txHash)}`);
+  const txId = toHexString(txHash);
+  console.log(`[INFO] Transaction Hash (for signing): ${txId}`);
   const signatures = [];
   const signerCount = finalAddressList.length - (finalAddressList.length - Object.keys(manifest.signers).length);
   for (let i = 0; i < signerCount; i++) {
@@ -9722,10 +9723,10 @@ async function createTransaction(manifest, signerKeys) {
   }
   appendSignatures(sctpEncoder, signatures);
   const finalSctpPayload = sctpEncoder.build();
-  const finalTransaction = new Uint8Array(pod.length + finalSctpPayload.length);
-  finalTransaction.set(pod, 0);
-  finalTransaction.set(finalSctpPayload, pod.length);
-  return finalTransaction;
+  const tx = new Uint8Array(pod.length + finalSctpPayload.length);
+  tx.set(pod, 0);
+  tx.set(finalSctpPayload, pod.length);
+  return { tx, txId };
 }
 
 // manifests/sign_timestamp.json
@@ -9870,7 +9871,7 @@ var ConnectionImpl = class {
    * - Server errors (non-2xx) return ok:false but still try to decode.
    */
   async sendTransaction(txObject) {
-    const { tx, decode: decode2 } = txObject;
+    const { tx: { tx, txId }, decode: decode2 } = txObject;
     if (!(tx instanceof Uint8Array)) {
       throw new Error("sendTransaction expects tx to be a Uint8Array");
     }
@@ -9902,7 +9903,8 @@ var ConnectionImpl = class {
       decoded,
       raw,
       decodeError,
-      responseHeaders: response.headers
+      responseHeaders: response.headers,
+      txId
     };
   }
 };

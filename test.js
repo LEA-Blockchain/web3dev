@@ -35,6 +35,7 @@ const ACCOUNT_INDEX = 0;
         const publishKeysetObject = await SystemProgram.publishKeyset(account.keyset);
         const publishKeysetResponse = await connection.sendTransaction(publishKeysetObject);
         if (!publishKeysetResponse.ok) {
+            console.log(`Transaction Id: ${publishKeysetResponse.txId}`);
             console.error('[error] publishKeyset failed:', publishKeysetResponse.status, publishKeysetResponse.decoded || publishKeysetResponse.raw);
         } else if (publishKeysetResponse.decodeError) {
             console.warn('[warn] Decoding publishKeyset failed:', publishKeysetResponse.decodeError);
@@ -47,6 +48,7 @@ const ACCOUNT_INDEX = 0;
         const getAllowedMintResponse = await connection.sendTransaction(getAllowedMintObject);
 
         if (!getAllowedMintResponse.ok) {
+            console.log(`Transaction Id: ${getAllowedMintResponse.txId}`);
             console.error('[error] getAllowedMint failed:', getAllowedMintResponse.status, getAllowedMintResponse.decoded || getAllowedMintResponse.raw);
         } else if (getAllowedMintResponse.decodeError) {
             console.warn('[warn] Decoding getAllowedMint failed:', getAllowedMintResponse.decodeError);
