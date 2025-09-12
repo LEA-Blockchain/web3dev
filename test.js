@@ -16,9 +16,9 @@ const ACCOUNT_INDEX = 0;
         const wallet = await Wallet.fromMnemonic(MNEMONIC);
 
         //Authenicate timestamp
-        console.log("\n\n--- Authenticating Timestamp ---");
-        const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
-        console.log("Signed Timestamp:", signTimestamp);
+//        console.log("\n\n--- Authenticating Timestamp ---");
+//        const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
+//        console.log("Signed Timestamp:", signTimestamp);
 
         //const wallet = await Wallet.fromMnemonic(mnemonic);
         const account = await wallet.getAccount(ACCOUNT_INDEX);
@@ -27,12 +27,12 @@ const ACCOUNT_INDEX = 0;
 
         console.log("\n\n--- Creating PublishKeyPair Transaction ---");
 
-        const connection = Connection("devnet");
+        const connection = Connection("mainnet-beta");
 
         //!!! mint coins need to be whitelisted first!!!
 
         // --- Publish Keyset ---
-        const publishKeysetObject = await SystemProgram.publishKeyset(account.keyset);
+        const publishKeysetObject = await SystemProgram.publishKeyset(account);
         const publishKeysetResponse = await connection.sendTransaction(publishKeysetObject);
         if (!publishKeysetResponse.ok) {
             console.log(`Transaction Id: ${publishKeysetResponse.txId}`);
@@ -55,7 +55,7 @@ const ACCOUNT_INDEX = 0;
         } else {
             console.log('[log] Maximum allowed mint:', getAllowedMintResponse.decoded);
         }
-
+process.exit(0);
         // --- Mint 10 Microlea ---
         const mintTransactionObject = await SystemProgram.mint(account.keyset, account.address, 10n);
         const mintTransactionResponse = await connection.sendTransaction(mintTransactionObject);

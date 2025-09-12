@@ -34,8 +34,8 @@
   "author": "Allwin Ketnawang <allwin@getlea.org>",
   "license": "MIT",
   "dependencies": {
-    "@leachain/keygen": "file:../keygen",
-    "@leachain/ltm": "file:../ltm",
+    "@getlea/keygen": "^1.0.0",
+    "@getlea/ltm": "file:../ltm",
     "@noble/hashes": "^1.8.0",
     "hash-wasm": "^4.12.0"
   },

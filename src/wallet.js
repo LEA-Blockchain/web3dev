@@ -1,8 +1,8 @@
 import { HDKey } from './hd.js';
 import { mnemonicToSeed } from './bip39.js';
 import { LEA_DERIVATION_BASE } from './constants.js';
-import { generateKeyset } from '@leachain/keygen';
-import { createTransaction } from '@leachain/ltm';
+import { generateKeyset } from '@getlea/keygen';
+import { createTransaction } from '@getlea/ltm';
 import signTimestampManifest from '../manifests/sign_timestamp.json' with { type: 'json' };
 import { uint8ArrayToBase64 } from './utils.js';
 

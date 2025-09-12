@@ -1,5 +1,5 @@
 // systemProgram.js
-import { createTransaction, decodeExecutionResult } from '@leachain/ltm';
+import { createTransaction, decodeExecutionResult } from '@getlea/ltm';
 import transferManifest from '../manifests/transfer.json' with { type: 'json' };
 import mintManifest from '../manifests/mint.json' with { type: 'json' };
 import burnManifest from '../manifests/burn.json' with { type: 'json' };
