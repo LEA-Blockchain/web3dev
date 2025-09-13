@@ -8,7 +8,10 @@ import mintWhitelistManifest from '../manifests/mint_whitelist.json' with { type
 import getAllowedMintManifest from '../manifests/get_allowed_mint.json' with { type: 'json' };
 import getBalanceManifest from '../manifests/get_balance.json' with { type: 'json' };
 import getCurrentSupplyManifest from '../manifests/get_current_supply.json' with { type: 'json' };
+import getLastTxHashManifest from '../manifests/get_last_tx_hash.json' with { type: 'json' };
 
+// Utility function to deep clone an object
+// Uses structuredClone if available, otherwise falls back to JSON methods
 const clone = (x) =>
 (typeof structuredClone === 'function'
   ? structuredClone(x)
@@ -73,6 +76,11 @@ export const SystemProgram = {
   getBalance: async (toAddress) => {
     const constants = { address: `$addr(${toAddress})` };
     return buildTxAndDecoder(getBalanceManifest, constants, {});
+  },
+
+  getLastTxHash: async (toAddress) => {
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(getLastTxHashManifest, constants, {});
   },
 
   getCurrentSupply: async () => {

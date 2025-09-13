@@ -7871,6 +7871,40 @@ var get_current_supply_default = {
   }
 };
 
+// manifests/get_last_tx_hash.json
+var get_last_tx_hash_default = {
+  comment: "Reads the last signed transaction hash for a given address",
+  sequence: 1,
+  feePayer: "",
+  gasLimit: 5e8,
+  gasPrice: 10,
+  signers: [],
+  constants: {
+    contractAddress: "$addr(1111111111111111111111111111111111111111111111111111111111111111)",
+    address: "$addr(lea16wk0htexlu9pdd38mmgaanf4jdzwp9pkwq4m932exkvgaartnw7s5ef25d)"
+  },
+  invocations: [
+    {
+      targetAddress: "$const(contractAddress)",
+      instructions: [
+        {
+          comment: "get lea account last tx hash",
+          uleb: 9
+        },
+        {
+          comment: "address to get the last tx hash for",
+          uleb: "$const(address)"
+        }
+      ]
+    }
+  ],
+  resultSchema: {
+    "$const(contractAddress)": {
+      lastTxHash: "uleb(0)"
+    }
+  }
+};
+
 // src/system-program.js
 var clone = (x) => typeof structuredClone === "function" ? structuredClone(x) : JSON.parse(JSON.stringify(x));
 var withConstants = (manifest, constants) => {
@@ -7918,6 +7952,10 @@ var SystemProgram = {
   getBalance: async (toAddress) => {
     const constants = { address: `$addr(${toAddress})` };
     return buildTxAndDecoder(get_balance_default, constants, {});
+  },
+  getLastTxHash: async (toAddress) => {
+    const constants = { address: `$addr(${toAddress})` };
+    return buildTxAndDecoder(get_last_tx_hash_default, constants, {});
   },
   getCurrentSupply: async () => {
     return buildTxAndDecoder(get_current_supply_default, {}, {});
