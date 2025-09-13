@@ -43,7 +43,7 @@ export class WalletImpl {
     async signTimestamp(signTimestamp, accountIndex = 0) {
         console.log("signTimestamp:", signTimestamp);
         const account = await this.getAccount(accountIndex);
-        const signers = { publisher: account.keyset };
+        const signers = { publisher: account };
 
         signTimestampManifest.constants.timestamp = String(signTimestamp);
         const tx = await createTransaction(signTimestampManifest, signers);

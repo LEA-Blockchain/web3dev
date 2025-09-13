@@ -1,5 +1,5 @@
-//import { Wallet, SystemProgram, Connection, generateMnemonic } from './src/index.js';
-import { Wallet, SystemProgram, Connection, generateMnemonic } from './dist/lea-wallet.node.mjs'
+import { Wallet, SystemProgram, Connection, generateMnemonic } from './src/index.js';
+//import { Wallet, SystemProgram, Connection, generateMnemonic } from './dist/lea-wallet.node.mjs'
 
 import fs from 'fs';
 
@@ -16,10 +16,10 @@ const ACCOUNT_INDEX = 0;
         const wallet = await Wallet.fromMnemonic(MNEMONIC);
 
         //Authenicate timestamp
-//        console.log("\n\n--- Authenticating Timestamp ---");
-//        const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
-//        console.log("Signed Timestamp:", signTimestamp);
-
+        console.log("\n\n--- Authenticating Timestamp ---");
+        const signTimestamp = await wallet.signTimestamp(Math.floor(Date.now() / 1000), ACCOUNT_INDEX);
+        console.log("Signed Timestamp:", signTimestamp);
+//process.exit(-1);
         //const wallet = await Wallet.fromMnemonic(mnemonic);
         const account = await wallet.getAccount(ACCOUNT_INDEX);
         //lea1sv9d4ayz8lm4mjxnxdu42c23g0jpk7w7r3g2euvug5ltn4wfnffq8pnjnn
@@ -55,7 +55,7 @@ const ACCOUNT_INDEX = 0;
         } else {
             console.log('[log] Maximum allowed mint:', getAllowedMintResponse.decoded);
         }
-process.exit(0);
+        process.exit(0);
         // --- Mint 10 Microlea ---
         const mintTransactionObject = await SystemProgram.mint(account.keyset, account.address, 10n);
         const mintTransactionResponse = await connection.sendTransaction(mintTransactionObject);

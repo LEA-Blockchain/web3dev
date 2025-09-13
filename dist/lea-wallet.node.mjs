@@ -7486,7 +7486,7 @@ var WalletImpl = class {
   async signTimestamp(signTimestamp, accountIndex = 0) {
     console.log("signTimestamp:", signTimestamp);
     const account = await this.getAccount(accountIndex);
-    const signers = { publisher: account.keyset };
+    const signers = { publisher: account };
     sign_timestamp_default.constants.timestamp = String(signTimestamp);
     const tx = await createTransaction(sign_timestamp_default, signers);
     return uint8ArrayToBase64(tx);
